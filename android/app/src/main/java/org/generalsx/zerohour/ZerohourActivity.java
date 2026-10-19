@@ -10,6 +10,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.provider.Settings;
+import android.system.Os;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.view.Window;
@@ -77,8 +79,22 @@ public class ZerohourActivity extends SDLActivity
         mUiHandler.postDelayed(mRehideSystemBars, REHIDE_DELAY_MS);
     }
 
+    // The engine names the local player after the machine (gethostname), which is "localhost" on
+    // every Android phone, so all phones in a LAN lobby had the same name. Hand it the phone's own
+    // name (IPEnumeration::getMachineName reads GENERALSX_DEVICE_NAME on Android). Set before
+    // SDLActivity starts the native thread.
+    private void publishDeviceName() {
+        try {
+            String deviceName = Settings.Global.getString(getContentResolver(), "device_name");
+            Os.setenv("GENERALSX_DEVICE_NAME", PlayerName.pick(deviceName, Build.MODEL), true);
+        } catch (Exception e) {
+            // Keep the engine's own default.
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        publishDeviceName();
         super.onCreate(savedInstanceState);
         applyImmersiveMode();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

@@ -553,6 +553,17 @@ AsciiString IPEnumeration::getMachineName()
 		m_isWinsockInitialized = true;
 	}
 
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android 20/10/2026 gethostname() is "localhost" on every phone, which made it
+	// the default player name everywhere. ZerohourActivity publishes the phone's own name instead
+	// (e.g. "POCO F7 Pro", already cut to the lobby's 12 characters).
+	const char *deviceName = getenv("GENERALSX_DEVICE_NAME");
+	if (deviceName != nullptr && deviceName[0] != '\0')
+	{
+		return AsciiString(deviceName);
+	}
+#endif
+
 	// get the local machine's host name
 	char hostname[256];
 	if (gethostname(hostname, sizeof(hostname)))

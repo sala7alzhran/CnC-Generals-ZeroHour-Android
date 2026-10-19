@@ -1240,6 +1240,13 @@ void GlobalData::parseGameDataDefinition( INI* ini )
 	OptionPreferences optionPref;
 	TheWritableGlobalData->m_useAlternateMouse = optionPref.getAlternateMouseModeEnabled();
 	TheWritableGlobalData->m_useRightMouseScrollWithAlternateMouse = optionPref.getRightMouseScrollWithAlternateMouseEnabled();
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android touch controls 19/10/2026 The gesture layer (SDL3GameEngine.cpp)
+	// synthesizes a tap as a left click and a 2-finger tap as a right click, and is built around
+	// the default mouse mode (left click selects and gives orders, right click deselects). The
+	// "alternate mouse" option would silently swap what the gestures mean, so it stays off on phones.
+	TheWritableGlobalData->m_useAlternateMouse = FALSE;
+#endif
 	TheWritableGlobalData->m_clientRetaliationModeEnabled = optionPref.getRetaliationModeEnabled();
 	TheWritableGlobalData->m_doubleClickAttackMove = optionPref.getDoubleClickAttackMoveEnabled();
 	TheWritableGlobalData->m_keyboardScrollFactor = optionPref.getScrollFactor();

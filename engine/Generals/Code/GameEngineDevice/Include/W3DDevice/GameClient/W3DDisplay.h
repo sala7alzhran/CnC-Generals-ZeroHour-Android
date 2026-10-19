@@ -112,6 +112,15 @@ public:
 	/// Draw's the remaining percentage of a rectangle (x% to 100)
 	virtual void drawRemainingRectClock(Int startX, Int startY, Int width, Int height, Int percent, UnsignedInt color) override;
 
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android smart HUD 19/10/2026 round shapes for the phone HUD (see Display.h)
+	virtual void drawFillTriangle( Int x0, Int y0, Int x1, Int y1, Int x2, Int y2, UnsignedInt color ) override;
+	virtual void drawFillCircle( Int centerX, Int centerY, Int radius, UnsignedInt color ) override;
+	virtual void drawArc( Int centerX, Int centerY, Int radius, Real lineWidth, Real fromTurn, Real toTurn, UnsignedInt color ) override;
+	virtual void drawFillRoundRect( Int startX, Int startY, Int width, Int height, Int radius, UnsignedInt color ) override;
+	virtual void drawOpenRoundRect( Int startX, Int startY, Int width, Int height, Int radius, Real lineWidth, UnsignedInt color ) override;
+#endif
+
 	/// draw an image fit within the screen coordinates
 	virtual void drawImage( const Image *image, Int startX, Int startY,
 													Int endX, Int endY, Color color = 0xFFFFFFFF, DrawImageMode mode=DRAW_IMAGE_ALPHA) override;

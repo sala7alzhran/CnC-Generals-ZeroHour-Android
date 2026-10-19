@@ -166,9 +166,9 @@ extern View     *TheTacticalView;
 extern GameLogic *TheGameLogic;
 // In-game ESC/pause menu toggle (QuitMenu.cpp) — same action the desktop ESC key runs.
 extern void ToggleQuitMenu();
-// The HUD overlay button a finger is holding down (AndroidHud::OverlayId), -1 if none. Read by
-// W3DInGameUI.cpp to draw the pressed state.
-Int TheAndroidOverlayPressed = -1;
+// The HUD overlay button a finger is holding down (AndroidHud::OverlayId, -1 if none) is
+// TheAndroidOverlayPressed, declared in AndroidHud.h and owned by the HUD (ControlBarPhoneLayout.cpp),
+// which draws the pressed state from it; this file sets it.
 
 namespace {
 
@@ -521,6 +521,13 @@ void overlayFire(Int id, bool ghost) {
 	case AndroidHud::OVERLAY_MENU:        ToggleQuitMenu(); break;
 	case AndroidHud::OVERLAY_SELECT_ALL:  appendMeta(GameMessage::MSG_META_SELECT_ALL); break;
 	case AndroidHud::OVERLAY_IDLE_WORKER: appendMeta(GameMessage::MSG_META_SELECT_NEXT_IDLE_WORKER); break;
+	case AndroidHud::OVERLAY_TAB_0:
+	case AndroidHud::OVERLAY_TAB_1:
+	case AndroidHud::OVERLAY_TAB_2:
+		// a drawer tab: show that page of the menu (the active tab again: its next page)
+		if (TheControlBar) TheControlBar->phoneSelectTab(id - AndroidHud::OVERLAY_TAB_0);
+		haptic(HAPTIC_CLICK);
+		break;
 	default:
 		// select the group; the engine also centres the camera on a quick second tap. A "+" slot
 		// is empty: a tap on it does nothing (selecting an empty group would deselect everything).
@@ -771,14 +778,15 @@ bool windowOwnsPoint(float px, float py) {
 	return false;
 }
 
-// The HUD's own surfaces: the top strip band and the open drawer. A finger that lands on them but
-// on no window (the gaps between tiles, the band's empty stretch) must not reach the battlefield
-// either. Windows found there are handled as windows (a tile, the minimap).
+// The HUD's own surfaces: the resource pill, the minimap block (map, rank badge, powers) and the
+// open drawer. A finger that lands on them but on no window (the gaps between tiles, the pill) must
+// not reach the battlefield either. Windows found there are handled as windows (a tile, the minimap).
 bool hudDeadZoneAt(float px, float py) {
 	if (!TheControlBar || !TheControlBar->phoneHudVisible() || !inLiveGame()) return false;
 	if (windowOwnsPoint(px, py)) return false;
 	ICoord2D s; toEngine(px, py, s);
-	if (TheControlBar->phoneMetrics().stripBand.contains(s.x, s.y)) return true;
+	const AndroidHud::Metrics &m = TheControlBar->phoneMetrics();
+	if (m.pill.contains(s.x, s.y) || m.mapBlock.contains(s.x, s.y)) return true;
 	AndroidHud::Rect drawer;
 	return TheControlBar->getPhoneDrawerRect(drawer) && drawer.contains(s.x, s.y);
 }

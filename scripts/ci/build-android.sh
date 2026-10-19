@@ -35,6 +35,7 @@ build_dxvk() {
   # libdisplay-info lives on gitlab.freedesktop.org, which has outages; retry with backoff.
   local attempt
   for attempt in 1 2 3 4 5; do
+    echo "$(date -u +%T) fetching DXVK submodules (attempt $attempt)"
     git -C "$src" submodule update --init --recursive && break
     (( attempt < 5 )) || { echo "DXVK submodules could not be fetched" >&2; exit 1; }
     sleep $(( 30 * attempt ))
@@ -47,7 +48,8 @@ build_dxvk() {
     echo "$SDL3_SHA256  $OUT/sdl3.tar.gz" | sha256sum -c -
     tar -xzf "$OUT/sdl3.tar.gz" -C "$OUT"
   fi
-  cat > "$pc/sdl3.pc" <<EOF
+  # meson looks the dependency up as 'SDL3', and pkg-config names are case-sensitive.
+  cat > "$pc/SDL3.pc" <<EOF
 Name: sdl3
 Description: SDL3 headers for DXVK's SDL3 WSI (library is loaded at runtime)
 Version: $SDL3_VERSION

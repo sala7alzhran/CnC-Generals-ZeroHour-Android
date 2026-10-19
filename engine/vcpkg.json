@@ -15,12 +15,12 @@
       },
       {
         "name": "openal-soft",
-        "platform": "!windows",
+        "platform": "!windows & !android",
         "features": []
       },
       {
         "name": "curl",
-        "platform": "!windows",
+        "platform": "!windows & !android",
         "features": ["ssl"]
       },
       {

@@ -1,0 +1,83 @@
+diff --git a/meson.build b/meson.build
+index 26afed4..7c6a555 100644
+--- a/meson.build
++++ b/meson.build
+@@ -137,6 +137,11 @@ else
+     dxvk_version += [ padded ]
+   endforeach
+   dxvk_so_version = {'version': dxvk_abi_version + '.' + dxvk_version[0] + dxvk_version[1] + dxvk_version[2]}
++  if cpp.get_define('__ANDROID__') != ''
++    # Android: the APK can only carry plain lib*.so files and the loader resolves
++    # DT_NEEDED by file name, so build unversioned libdxvk_d3d9.so / libdxvk_d3d8.so.
++    dxvk_so_version = {}
++  endif
+ 
+   wrc           = find_program('touch')
+   wrc_generator = generator(wrc, output : [ '@BASENAME@_ignored.h' ], arguments : [ '@OUTPUT@' ] )
+diff --git a/src/dxvk/dxvk_presenter.cpp b/src/dxvk/dxvk_presenter.cpp
+index 38b8a2d..7088a90 100644
+--- a/src/dxvk/dxvk_presenter.cpp
++++ b/src/dxvk/dxvk_presenter.cpp
+@@ -102,6 +102,10 @@ namespace dxvk {
+       m_acquireStatus = m_vkd->vkAcquireNextImageKHR(m_vkd->device(),
+         m_swapchain, std::numeric_limits<uint64_t>::max(),
+         sync.acquire, VK_NULL_HANDLE, &m_imageIndex);
++#ifdef __ANDROID__
++      if (m_acquireStatus == VK_SUBOPTIMAL_KHR)
++        m_acquireStatus = VK_SUCCESS;
++#endif
+     }
+ 
+     // This is a normal occurence, but may be useful for
+@@ -126,6 +130,10 @@ namespace dxvk {
+       m_acquireStatus = m_vkd->vkAcquireNextImageKHR(m_vkd->device(),
+         m_swapchain, std::numeric_limits<uint64_t>::max(),
+         sync.acquire, VK_NULL_HANDLE, &m_imageIndex);
++#ifdef __ANDROID__
++      if (m_acquireStatus == VK_SUBOPTIMAL_KHR)
++        m_acquireStatus = VK_SUCCESS;
++#endif
+ 
+       if (m_acquireStatus < 0) {
+         Logger::info(str::format("Presenter: Got ", m_acquireStatus, " from fresh swapchain"));
+@@ -200,6 +208,15 @@ namespace dxvk {
+     VkResult status = m_vkd->vkQueuePresentKHR(
+       m_device->queues().graphics.queueHandle, &info);
+ 
++#ifdef __ANDROID__
++    // Android's loader reports SUBOPTIMAL on every frame when the swapchain
++    // preTransform (identity) differs from the display rotation, e.g. a
++    // landscape game on a portrait-native phone. The compositor still rotates
++    // the image correctly, so recreating the swapchain every frame only costs time.
++    if (status == VK_SUBOPTIMAL_KHR)
++      status = VK_SUCCESS;
++#endif
++
+     // Maintain valid state if presentation succeeded, even if we want to
+     // recreate the swapchain. Spec says that 'queue' operations, i.e. the
+     // semaphore and fence signals, still happen if present fails with
+@@ -239,6 +256,10 @@ namespace dxvk {
+       m_acquireStatus = m_vkd->vkAcquireNextImageKHR(m_vkd->device(),
+         m_swapchain, std::numeric_limits<uint64_t>::max(),
+         nextSync.acquire, VK_NULL_HANDLE, &m_imageIndex);
++#ifdef __ANDROID__
++      if (m_acquireStatus == VK_SUBOPTIMAL_KHR)
++        m_acquireStatus = VK_SUCCESS;
++#endif
+     }
+ 
+     // Recreate the swapchain on the next acquire, even if we get suboptimal.
+diff --git a/src/wsi/sdl3/wsi_platform_sdl3.cpp b/src/wsi/sdl3/wsi_platform_sdl3.cpp
+index 9975cda..aea868a 100644
+--- a/src/wsi/sdl3/wsi_platform_sdl3.cpp
++++ b/src/wsi/sdl3/wsi_platform_sdl3.cpp
+@@ -15,6 +15,9 @@ namespace dxvk::wsi {
+         "SDL3.dll"
+ #elif defined(__APPLE__)
+         "libSDL3.0.dylib"
++#elif defined(__ANDROID__)
++        // Android packages SDL as an unversioned libSDL3.so in the APK's lib dir.
++        "libSDL3.so"
+ #else
+         "libSDL3.so.0"
+ #endif

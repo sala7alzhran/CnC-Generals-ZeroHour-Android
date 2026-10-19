@@ -1,33 +1,188 @@
 name: android-ci
 
-# Sanity build of the Gradle app shell. The native engine (.so) is NOT built here — it needs the
-# cross-compiled dependencies and, ultimately, your own game data to run. This just keeps the
-# Android project (manifest, resources, Java glue, Gradle config) honest.
+# Builds the engine-only debug APK from a clean checkout: DXVK (meson, arm64-v8a), the vcpkg
+# dependencies, the GeneralsX engine (libmain.so + SDL3/SDL3_image/OpenAL/GameSpy) and the Gradle
+# app. No game data is involved — the APK asks the player for their own files on first launch.
 
 on:
   push:
-    paths:
-      - 'android/**'
-      - '.github/workflows/android-ci.yml'
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
   pull_request:
-    paths:
-      - 'android/**'
-  workflow_dispatch:   # allow re-running the check manually from the Actions tab
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+concurrency:
+  group: android-ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NDK_VERSION: 27.2.12479018      # keep in sync with android/app/build.gradle ndkVersion
+  ANDROID_PLATFORM_PKG: platforms;android-35
+  BUILD_TOOLS_PKG: build-tools;35.0.0
 
 jobs:
-  gradle-validate:
-    runs-on: ubuntu-latest
+  build-apk:
+    # Pinned (instead of ubuntu-latest) so a runner image upgrade can't silently change the host
+    # toolchain (meson, glslang, cmake) under a working build.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v3
-      - name: Lint the manifest & resources
-        working-directory: android
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Install host build tools
         run: |
-          echo "Gradle project files present:"
-          test -f settings.gradle && test -f app/build.gradle && test -f app/src/main/AndroidManifest.xml
-          echo "OK"
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            ninja-build meson glslang-tools pkg-config ccache hwdata \
+            autoconf autoconf-archive automake libtool bison flex
+          cmake --version | head -n1; meson --version; glslangValidator --version | head -n1
+
+      - name: Cache Android NDK
+        id: ndk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
+
+      - name: Install Android SDK 35 + NDK
+        run: |
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          pkgs=("$ANDROID_PLATFORM_PKG" "$BUILD_TOOLS_PKG")
+          if [[ "${{ steps.ndk-cache.outputs.cache-hit }}" != "true" ]]; then pkgs+=("ndk;$NDK_VERSION"); fi
+          "$SDKMANAGER" --install "${pkgs[@]}" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          grep Pkg.Revision "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION/source.properties"
+
+      - name: Set up vcpkg (pinned to the engine's builtin-baseline)
+        run: |
+          baseline=$(python3 -c "import json; print(json.load(open('engine/vcpkg.json'))['builtin-baseline'])")
+          git clone -q https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" checkout -q "$baseline"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+          echo "VCPKG_DEFAULT_BINARY_CACHE=$HOME/.cache/vcpkg-archives" >> "$GITHUB_ENV"
+          echo "CCACHE_DIR=$HOME/.cache/ccache" >> "$GITHUB_ENV"
+          mkdir -p "$HOME/.cache/vcpkg-archives"
+
+      # Caches are restored and saved separately so a failed engine build still keeps the
+      # (slow) dependency builds for the next run.
+      - name: Restore vcpkg binary cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/vcpkg-archives
+          key: vcpkg-arm64-android-${{ env.NDK_VERSION }}-${{ hashFiles('engine/vcpkg.json', 'scripts/ci/vcpkg-triplets/**') }}
+          restore-keys: vcpkg-arm64-android-${{ env.NDK_VERSION }}-
+
+      - name: Mark restored vcpkg archives
+        run: touch "$RUNNER_TEMP/vcpkg-restored"
+
+      - name: Restore DXVK build
+        id: dxvk-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/android-ci/dxvk
+          key: dxvk-${{ env.NDK_VERSION }}-${{ hashFiles('scripts/ci/versions.env', 'scripts/ci/dxvk-android.patch') }}
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ env.NDK_VERSION }}-${{ github.sha }}
+          restore-keys: ccache-${{ env.NDK_VERSION }}-
+
+      - name: Build DXVK (d3d8 + d3d9, arm64-v8a)
+        run: scripts/ci/build-android.sh dxvk
+
+      - name: Save DXVK build
+        if: steps.dxvk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/android-ci/dxvk
+          key: ${{ steps.dxvk-cache.outputs.cache-primary-key }}
+
+      - name: Build engine (vcpkg deps + z_generals -> libmain.so)
+        env:
+          CCACHE_MAXSIZE: 2G
+          CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
+        run: |
+          ccache -z
+          scripts/ci/build-android.sh engine
+          ccache -s
+
+      - name: Show build errors
+        if: failure()
+        run: |
+          for f in $(find "$VCPKG_ROOT/buildtrees" -maxdepth 2 -name '*.log' -newer "$RUNNER_TEMP/vcpkg-restored" 2>/dev/null); do
+            if grep -qi 'error' "$f"; then echo "::group::$f"; tail -n 60 "$f"; echo "::endgroup::"; fi
+          done
+          if [[ -f build/android-ci/dxvk-build/meson-logs/meson-log.txt ]]; then
+            echo "::group::meson-log.txt"; tail -n 80 build/android-ci/dxvk-build/meson-logs/meson-log.txt; echo "::endgroup::"
+          fi
+          if [[ -f build/android-ci/engine-build.log ]]; then
+            echo "== first compile errors =="; grep -n -m 60 -A3 -E 'error:|FAILED:|undefined reference|undefined symbol' build/android-ci/engine-build.log || true
+          fi
+
+      - name: Check for newly built vcpkg packages
+        id: vcpkg-new
+        if: always()
+        run: |
+          if [[ -n "$(find ~/.cache/vcpkg-archives -type f -newer "$RUNNER_TEMP/vcpkg-restored" -print -quit)" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save vcpkg binary cache
+        if: always() && steps.vcpkg-new.outputs.changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/vcpkg-archives
+          key: vcpkg-arm64-android-${{ env.NDK_VERSION }}-${{ hashFiles('engine/vcpkg.json', 'scripts/ci/vcpkg-triplets/**') }}-${{ github.run_id }}
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ env.NDK_VERSION }}-${{ github.sha }}-${{ github.run_attempt }}
+
+      - name: Stage native libraries into android/app/libs/arm64-v8a
+        run: scripts/ci/build-android.sh stage
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Check APK contents
+        run: |
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          unzip -l "$apk" | tee apk-contents.txt | grep 'lib/arm64-v8a/'
+          for lib in libmain.so libSDL3.so libdxvk_d3d8.so libdxvk_d3d9.so; do
+            grep -q "lib/arm64-v8a/$lib" apk-contents.txt || { echo "missing $lib in APK"; exit 1; }
+          done
+          if grep -Eiq '\.(pak|big|bik)$' apk-contents.txt; then echo "game data found in APK"; exit 1; fi
+          ls -lh "$apk"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: generals-zh-android-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload unstripped libmain.so (for symbolizing crash logs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: libmain-symbols
+          path: build/android-ci/symbols/libmain.so
+          retention-days: 14

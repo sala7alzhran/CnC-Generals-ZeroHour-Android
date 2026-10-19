@@ -51,6 +51,18 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
 - **Fixed** the log spam: `D3DRS_PATCHSEGMENTS`, which DXVK's D3D8 layer doesn't implement and
   warned about on every shader change (~13 KB/s into `ccg_log.txt`), is no longer set on Android.
 
+## Gameplay performance
+- **Fixed** late-game battles slowing to half speed with stutter. A unit that can't reach its goal
+  (here two Battlemasters) re-requested a path every 3 logic frames, and each search (~9,500 cells,
+  60-95 ms on a phone) used up the pathfinder's whole per-frame budget. The original spin guard only
+  delays re-paths within fewer than 3 frames. Now a unit whose search used up that budget waits
+  before the next one: 1 second, growing to 4 seconds while its searches stay that expensive, and
+  back to normal after a cheaper search (`AIUpdateInterface::isRepathTooSoon`). Measured on the
+  owner's replay (Twilight Flame, $100,000): during the battle the logic went from 15-28 to
+  28.6-30 frames per second (30 is full speed), and pauses over 50 ms went from 32-53 to 1-4 per
+  5 seconds. This changes unit behaviour, so replays recorded before it go out of sync; it is
+  compiled only when `RETAIL_COMPATIBLE_CRC` is off.
+
 ## Rendering (DXVK → Vulkan on Mali‑G57)
 - **Fixed** the Mali shader‑compiler crash in missions — root cause: D3D user clip planes
   (`gl_ClipDistance`). Disabling them unblocked gameplay and full model deployment.

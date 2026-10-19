@@ -454,6 +454,8 @@ public:
 private:
 	Bool computePath( PathfindServicesInterface *pathfinder, Coord3D *destination );	///< computes path to destination, returns false if no path
 	Bool computeAttackPath(PathfindServicesInterface *pathfinder,  const Object *victim, const Coord3D* victimPos );	///< computes path to attack the current target, returns false if no path
+	Bool isRepathTooSoon() const;	///< a new path request has to wait (see the request*Path functions)
+	Int getRepathWaitFrames( Int defaultWait ) const;	///< how long a request isRepathTooSoon() turned down waits
 #ifdef ALLOW_SURRENDER
 	void doSurrenderUpdateStuff();
 #endif
@@ -464,6 +466,7 @@ public:
 	void requestAttackPath( ObjectID victimID, const Coord3D* victimPos );	///< computes path to attack the current target, returns false if no path
 	void requestApproachPath( Coord3D *destination );	///< computes path to attack the current target, returns false if no path
 	void requestSafePath( ObjectID repulsor1 );	///< computes path to attack the current target, returns false if no path
+	void setLastPathfindExpensive( Bool expensive );	///< set by the pathfind queue after each search for this unit
 
 	Bool isWaitingForPath() const {return m_waitingForPath;}
 	Bool isAttackPath() const {return m_isAttackPath;} ///< True if we have a path to an attack location.
@@ -735,6 +738,7 @@ private:
 		NEVER EVER EVER set this directly. you must call setQueueForPathTime() in ALL CASES.
 	*/
 	UnsignedInt	m_queueForPathFrame;
+	Int					m_expensivePathfindStreak;	///< Searches in a row for this unit that used up the pathfinder's whole per-frame cell budget.
 	Coord3D			m_finalPosition;						///< Final position for the moveto states.
 	ObjectID		m_repulsor1;								///< First object we are running away from.
 	ObjectID		m_repulsor2;								///< Second object we are running away from.

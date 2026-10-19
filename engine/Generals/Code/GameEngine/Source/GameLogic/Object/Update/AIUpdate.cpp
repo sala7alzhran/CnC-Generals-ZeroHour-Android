@@ -233,6 +233,7 @@ AIUpdateInterface::AIUpdateInterface( Thing *thing, const ModuleData* moduleData
 	m_bumpSpeedLimit = FAST_AS_POSSIBLE;
 	m_ignoreCollisionsUntil = 0;
 	m_queueForPathFrame = 0;
+	m_expensivePathfindStreak = 0;
 	m_finalPosition.zero();
 	m_repulsor1 = INVALID_ID;
 	m_repulsor2 = INVALID_ID;
@@ -467,6 +468,53 @@ void AIUpdateInterface::doPathfind( PathfindServicesInterface *pathfinder )
 #endif
 }
 
+//-------------------------------------------------------------------------------------------------
+/** Whether a new path request has to wait instead of going into the pathfind queue. */
+Bool AIUpdateInterface::isRepathTooSoon() const
+{
+	const UnsignedInt now = TheGameLogic->getFrame();
+	/* Requesting path very quickly.  Can cause a spin. */
+	if (m_pathTimestamp > now-3)
+		return TRUE;
+#if !RETAIL_COMPATIBLE_CRC
+	// GeneralsX @performance Android 20/10/2026 A unit whose last search used up the pathfinder's whole
+	// per-frame cell budget (typically a goal it can't reach: the search fails or settles for the
+	// closest cell after ~9,500 cells) also waits until its path is a second old, one more second for
+	// each such search in a row (up to 4). Two stuck Battlemasters re-pathing every 3 frames, 60-95 ms
+	// per search on a phone, slowed a late-game battle to half speed; the 3-frame guard above lets
+	// exactly that rate through.
+	if (m_expensivePathfindStreak > 0 && m_pathTimestamp > now-m_expensivePathfindStreak*LOGICFRAMES_PER_SECOND)
+		return TRUE;
+#endif
+	return FALSE;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** How long a path request that isRepathTooSoon() turned down waits before it goes into the queue. */
+Int AIUpdateInterface::getRepathWaitFrames( Int defaultWait ) const
+{
+#if !RETAIL_COMPATIBLE_CRC
+	if (m_expensivePathfindStreak > 0)
+	{
+		const UnsignedInt allowedFrame = m_pathTimestamp + m_expensivePathfindStreak*LOGICFRAMES_PER_SECOND;
+		const UnsignedInt now = TheGameLogic->getFrame();
+		if (allowedFrame > now && (Int)(allowedFrame - now) > defaultWait)
+			return (Int)(allowedFrame - now);
+	}
+#endif
+	return defaultWait;
+}
+
+//-------------------------------------------------------------------------------------------------
+void AIUpdateInterface::setLastPathfindExpensive( Bool expensive )
+{
+	const Int MAX_EXPENSIVE_PATHFIND_STREAK = 4;	// waits of 1, 2, 3, then 4 seconds
+	if (!expensive)
+		m_expensivePathfindStreak = 0;
+	else if (m_expensivePathfindStreak < MAX_EXPENSIVE_PATHFIND_STREAK)
+		++m_expensivePathfindStreak;
+}
+
 /* Requests a path to be found.  Note that if it is possible to do it without having to use the
 pathfinder (air units just move point to point) it generates the path immediately.  Otherwise the path
 will be processed when we get to the front of the pathfind queue. jba */
@@ -491,11 +539,11 @@ void AIUpdateInterface::requestPath( Coord3D *destination, Bool isFinalGoal )
 		return;
 	}
 	m_waitingForPath = TRUE;
-	if (m_pathTimestamp > TheGameLogic->getFrame()-3) {
+	if (isRepathTooSoon()) {
 		/* Requesting path very quickly.  Can cause a spin. */
 		//DEBUG_LOG(("%d Pathfind - repathing in less than 3 frames.  Waiting 1 second",
 			//TheGameLogic->getFrame()));
-		setQueueForPathTime(LOGICFRAMES_PER_SECOND);
+		setQueueForPathTime(getRepathWaitFrames(LOGICFRAMES_PER_SECOND));
 		// See if it has been too soon.
 		// jba intense debug
 		//DEBUG_LOG(("Info - RePathing very quickly %d, %d.", m_pathTimestamp, TheGameLogic->getFrame()));
@@ -524,10 +572,10 @@ void AIUpdateInterface::requestAttackPath( ObjectID victimID, const Coord3D* vic
 	m_isApproachPath = FALSE;
 	m_isSafePath = FALSE;
 	m_waitingForPath = TRUE;
-	if (m_pathTimestamp > TheGameLogic->getFrame()-3) {
+	if (isRepathTooSoon()) {
 		/* Requesting path very quickly.  Can cause a spin. */
 		//DEBUG_LOG(("%d Pathfind - repathing in less than 3 frames.  Waiting 2 second",TheGameLogic->getFrame()));
-		setQueueForPathTime(2*LOGICFRAMES_PER_SECOND);
+		setQueueForPathTime(getRepathWaitFrames(2*LOGICFRAMES_PER_SECOND));
 		return;
 	}
 	TheAI->pathfinder()->queueForPath(getObject()->getID());
@@ -547,10 +595,10 @@ void AIUpdateInterface::requestApproachPath( Coord3D *destination )
 	m_isApproachPath = TRUE;
 	m_isSafePath = FALSE;
 	m_waitingForPath = TRUE;
-	if (m_pathTimestamp > TheGameLogic->getFrame()-3) {
+	if (isRepathTooSoon()) {
 		/* Requesting path very quickly.  Can cause a spin. */
 		//DEBUG_LOG(("%d Pathfind - repathing in less than 3 frames.  Waiting 2 second",TheGameLogic->getFrame()));
-		setQueueForPathTime(2*LOGICFRAMES_PER_SECOND);
+		setQueueForPathTime(getRepathWaitFrames(2*LOGICFRAMES_PER_SECOND));
 		return;
 	}
 	TheAI->pathfinder()->queueForPath(getObject()->getID());
@@ -571,10 +619,10 @@ void AIUpdateInterface::requestSafePath( ObjectID repulsor )
 	m_isApproachPath = FALSE;
 	m_isSafePath = TRUE;
 	m_waitingForPath = TRUE;
-	if (m_pathTimestamp > TheGameLogic->getFrame()-3) {
+	if (isRepathTooSoon()) {
 		/* Requesting path very quickly.  Can cause a spin. */
 		//DEBUG_LOG(("%d Pathfind - repathing in less than 3 frames.  Waiting 2 second",TheGameLogic->getFrame()));
-		setQueueForPathTime(2*LOGICFRAMES_PER_SECOND);
+		setQueueForPathTime(getRepathWaitFrames(2*LOGICFRAMES_PER_SECOND));
 		return;
 	}
 	TheAI->pathfinder()->queueForPath(getObject()->getID());

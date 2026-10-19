@@ -67,6 +67,8 @@
 #include "GameClient/Display.h"
 #include "GameClient/VideoPlayer.h"
 #include <jni.h>   // density + haptics come from ZerohourActivity via SDL_GetAndroidJNIEnv()
+#include "GameClient/AndroidHud.h"   // phone HUD overlay buttons (menu, control groups): geometry shared with the draw side
+#include "Common/MessageStream.h"    // meta commands the overlay buttons send
 #endif
 
 // Extern globals for input devices (set by GameClient)
@@ -150,6 +152,8 @@ Bool DecodeNextUtf8Codepoint(const char* text, size_t length, size_t& offset, Un
 //     2-finger tap       -> right click: deselect / cancel a placement
 //   Everywhere else (menus, HUD windows, building placement, cutscenes) a finger
 //   is a mouse: tap = left click, drag = left drag, 2-finger tap = right click.
+//   The HUD overlay buttons (☰ menu, control groups, ALL, IDLE; AndroidHud.h) are
+//   hit-tested here before any of that and fire on release.
 //
 // Thresholds are in millimetres from the real display density, never pixels.
 // Nothing here allocates per event: all state lives in fixed-size statics, and
@@ -159,6 +163,9 @@ extern View     *TheTacticalView;
 extern GameLogic *TheGameLogic;
 // In-game ESC/pause menu toggle (QuitMenu.cpp) — same action the desktop ESC key runs.
 extern void ToggleQuitMenu();
+// The HUD overlay button a finger is holding down (AndroidHud::OverlayId), -1 if none. Read by
+// W3DInGameUI.cpp to draw the pressed state.
+Int TheAndroidOverlayPressed = -1;
 
 namespace {
 
@@ -221,11 +228,14 @@ Uint64       g_twoStartMs = 0;
 // until ALL fingers lift (stops a stray drag-box when one finger lifts first)
 bool         g_suppressLeft = false;
 
-// on-screen ESC/menu button (top-left). Tapping it toggles the in-game pause menu.
-// KEEP THIS GEOMETRY IN SYNC WITH kMenuBtn* IN W3DInGameUI.cpp (the draw side).
-const float  MENU_BTN_X = 16, MENU_BTN_Y = 14, MENU_BTN_W = 108, MENU_BTN_H = 56;
-bool         g_escArmed = false;      // first finger came down on the menu button
-SDL_FingerID g_escFingerId = 0;
+// HUD overlay buttons (☰ menu, control groups 1-4, ALL, IDLE): drawn by W3DInGameUI.cpp from
+// the AndroidHud geometry and hit-tested here from the same geometry. One finger arms one button;
+// it fires on release over the button, and a group button fires its long-press action (assign
+// the selection) after LONG_PRESS_NS instead.
+Int          g_overlayArmed = -1;     // AndroidHud::OverlayId under the first finger, -1 if none
+SDL_FingerID g_overlayFingerId = 0;
+Uint64       g_overlayDownNs = 0;
+bool         g_overlayLongFired = false;
 
 // on-screen SKIP button (top-right), shown only during a video/cutscene. Tapping it
 // synthesizes ESC → the movie loops skip. Right-anchored; KEEP IN SYNC WITH W3DDisplay.cpp.
@@ -253,14 +263,10 @@ inline bool videoPlaying() {
 	return (TheVideoPlayer && TheVideoPlayer->firstStream() != NULL)
 	    || (TheDisplay && TheDisplay->isMoviePlaying());
 }
-// The menu button is live only while playing, while the pause menu is NOT already up, and
+// Overlay buttons are live only while playing, while the pause menu is NOT already up, and
 // NOT during a cutscene (then the Skip button takes over). Matches W3DInGameUI.cpp's draw gate.
-inline bool menuButtonActive() {
+inline bool overlaysActive() {
 	return inLiveGame() && (!TheInGameUI || !TheInGameUI->isQuitMenuVisible()) && !videoPlaying();
-}
-inline bool onMenuButton(float px, float py) {
-	return px >= MENU_BTN_X && px < MENU_BTN_X + MENU_BTN_W
-	    && py >= MENU_BTN_Y && py < MENU_BTN_Y + MENU_BTN_H;
 }
 inline bool onSkipButton(float px, float py) {
 	float w, h; winSize(w, h);
@@ -470,6 +476,48 @@ void toEngine(float px, float py, ICoord2D &out) {
 	float cy = py - (float)pbY; if (cy < 0) cy = 0; if (cy > (float)pbH) cy = (float)pbH;
 	out.x = (Int)(cx * (float)dw / (float)pbW);
 	out.y = (Int)(cy * (float)dh / (float)pbH);
+}
+
+// ---------------------------------------------------- HUD overlay buttons --
+Int overlayHit(float px, float py) {
+	if (!TheDisplay) return -1;
+	ICoord2D s; toEngine(px, py, s);
+	const Int w = (Int)TheDisplay->getWidth(), h = (Int)TheDisplay->getHeight();
+	const AndroidHud::Metrics m = AndroidHud::computeMetrics(w, h, AndroidHud::pixelsPerMmFor(w, h));
+	for (Int i = 0; i < AndroidHud::OVERLAY_COUNT; ++i)
+		if (m.overlay[i].contains(s.x, s.y)) return i;
+	return -1;
+}
+inline bool overlayIsGroup(Int id) {
+	return id >= AndroidHud::OVERLAY_GROUP_1 && id < AndroidHud::OVERLAY_GROUP_1 + AndroidHud::NUM_CONTROL_GROUPS;
+}
+// Meta commands go through the same message stream the PC hotkeys use, so the engine's own
+// translators (team select/create, select all, next idle worker) do the work.
+inline void appendMeta(GameMessage::Type type) {
+	if (TheMessageStream) TheMessageStream->appendMessage(type);
+}
+// Tap: the button's main action.
+void overlayFire(Int id) {
+	switch (id) {
+	case AndroidHud::OVERLAY_MENU:        ToggleQuitMenu(); break;
+	case AndroidHud::OVERLAY_SELECT_ALL:  appendMeta(GameMessage::MSG_META_SELECT_ALL); break;
+	case AndroidHud::OVERLAY_IDLE_WORKER: appendMeta(GameMessage::MSG_META_SELECT_NEXT_IDLE_WORKER); break;
+	default:
+		if (overlayIsGroup(id))   // select the group; the engine also centres the camera on a quick second tap
+			appendMeta((GameMessage::Type)(GameMessage::MSG_META_SELECT_TEAM0 + (id - AndroidHud::OVERLAY_GROUP_1)));
+		break;
+	}
+}
+// Long press on a group button: assign the current selection to that group.
+void overlayLongPress(Int id) {
+	if (!overlayIsGroup(id)) return;
+	appendMeta((GameMessage::Type)(GameMessage::MSG_META_CREATE_TEAM0 + (id - AndroidHud::OVERLAY_GROUP_1)));
+	haptic(HAPTIC_TICK);
+}
+inline void endOverlay() {
+	g_overlayArmed = -1;
+	g_overlayLongFired = false;
+	TheAndroidOverlayPressed = -1;
 }
 
 // World point on the terrain under a window pixel.
@@ -758,14 +806,17 @@ void handleFingerDown(const SDL_TouchFingerEvent &tf) {
 		g_tfCount++;
 	}
 	if (g_tfCount == 1) {
+		const Int overlay = (firstFinger && overlaysActive()) ? overlayHit(px, py) : -1;
 		if (firstFinger && videoPlaying() && onSkipButton(px, py)) {
 			// press landed on the SKIP button during a cutscene — arm it, no select
 			g_skipArmed = true; g_skipFingerId = tf.fingerID;
 			g_leftPending = false; g_leftHeld = false;
 			g_pm = PM_NONE;
-		} else if (firstFinger && menuButtonActive() && onMenuButton(px, py)) {
-			// press landed on the on-screen menu button — arm it, don't start a select/drag
-			g_escArmed = true; g_escFingerId = tf.fingerID;
+		} else if (overlay >= 0) {
+			// press landed on a HUD overlay button — arm it, don't start a select/drag
+			g_overlayArmed = overlay; g_overlayFingerId = tf.fingerID;
+			g_overlayDownNs = now; g_overlayLongFired = false;
+			TheAndroidOverlayPressed = overlay;
 			g_leftPending = false; g_leftHeld = false;
 			g_pm = PM_NONE;
 		} else if (cameraModeAt(px, py)) {
@@ -783,7 +834,7 @@ void handleFingerDown(const SDL_TouchFingerEvent &tf) {
 			g_leftDownMs = SDL_GetTicks();
 		}
 	} else if (g_tfCount == 2) {
-		g_escArmed = false; g_skipArmed = false;   // a 2nd finger cancels the button arm
+		endOverlay(); g_skipArmed = false;   // a 2nd finger cancels the button arm
 		if (g_pm == PM_CAM_BOX) {
 			return;   // a second finger during box-select is ignored; the box carries on
 		}
@@ -798,6 +849,12 @@ void handleFingerMotion(const SDL_TouchFingerEvent &tf) {
 	float px = tf.x * w, py = tf.y * h;
 	g_tf[idx].x = px; g_tf[idx].y = py;
 	const Uint64 now = SDL_GetTicksNS();
+
+	if (g_overlayArmed >= 0 && tf.fingerID == g_overlayFingerId) {
+		// the pressed look follows the finger: off the button means "release will not fire"
+		TheAndroidOverlayPressed = (overlayHit(px, py) == g_overlayArmed) ? g_overlayArmed : -1;
+		return;
+	}
 
 	if (g_two && g_tfCount == 2) {
 		// The camera work for two fingers happens once per frame in touchFrame();
@@ -879,13 +936,14 @@ void handleFingerUp(const SDL_TouchFingerEvent &tf) {
 		return;
 	}
 
-	// on-screen menu button: fire only if the finger lifts while still over the button
-	if (g_escArmed && tf.fingerID == g_escFingerId) {
-		bool fire = onMenuButton(px, py) && menuButtonActive();
-		g_escArmed = false;
+	// HUD overlay button: fire only if the finger lifts while still over it and no long-press fired
+	if (g_overlayArmed >= 0 && tf.fingerID == g_overlayFingerId) {
+		const Int id = g_overlayArmed;
+		const bool fire = !g_overlayLongFired && overlaysActive() && overlayHit(px, py) == id;
+		endOverlay();
 		dropFinger(idx);
 		if (g_tfCount == 0) { g_suppressLeft = false; g_leftPending = false; g_leftHeld = false; endPrimary(); }
-		if (fire) ToggleQuitMenu();
+		if (fire) overlayFire(id);
 		return;
 	}
 
@@ -931,7 +989,7 @@ void handleFingerUp(const SDL_TouchFingerEvent &tf) {
 		endPrimary();
 	}
 	dropFinger(idx);
-	if (g_tfCount == 0) { g_suppressLeft = false; g_escArmed = false; g_skipArmed = false; endPrimary(); }
+	if (g_tfCount == 0) { g_suppressLeft = false; endOverlay(); g_skipArmed = false; endPrimary(); }
 }
 
 // Run once per event-pump after draining events: release any due synthesized
@@ -948,6 +1006,12 @@ void touchTick() {
 	if (g_pm == PM_CAM_PENDING && g_tfCount == 1 && SDL_GetTicksNS() - g_pDownNs >= LONG_PRESS_NS) {
 		g_pm = PM_CAM_ARMED;
 		haptic(HAPTIC_TICK);
+	}
+	if (g_overlayArmed >= 0 && !g_overlayLongFired && overlayIsGroup(g_overlayArmed)
+	    && SDL_GetTicksNS() - g_overlayDownNs >= LONG_PRESS_NS) {
+		g_overlayLongFired = true;         // the release will not also select the group
+		TheAndroidOverlayPressed = -1;
+		overlayLongPress(g_overlayArmed);
 	}
 }
 
@@ -1095,6 +1159,8 @@ void SDL3GameEngine::init(void)
 	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
 	SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
 	fprintf(stderr, "INFO: Android touch controls enabled (grab pan + fling, long-press box select, anchored pinch zoom)\n");
+	// The phone HUD (ControlBarPhoneLayout.cpp, W3DInGameUI.cpp) sizes itself in millimetres too.
+	TheAndroidPixelsPerMm = pxPerMm();
 #endif
 
 	fprintf(stderr, "INFO: SDL3GameEngine using pre-initialized window\n");

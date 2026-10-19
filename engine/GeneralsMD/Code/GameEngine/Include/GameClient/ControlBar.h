@@ -762,6 +762,15 @@ public:
 	void switchControlBarStage( ControlBarStages stage );
 	void toggleControlBarStage();
 
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android smart HUD 19/10/2026 The bar's own windows are re-laid-out into a
+	// phone HUD (ControlBarPhoneLayout.cpp, docs/MOBILE-UX-SPEC.md §6). The pass runs from update()
+	// once dirty; the engine's own repositioning points mark it so.
+	void markPhoneLayoutDirty() { m_phoneLayoutDirty = TRUE; }
+	void placePhoneWindow( GameWindow *win, Int screenX, Int screenY, Int width, Int height );
+	GameFont *getPhoneHudFont( Real heightMm );		///< the HUD's text font at a physical height, for overlay labels
+#endif
+
 	const Image *getStarImage();
 
 	Color getBorderColor(){return m_commandBarBorderColor;}
@@ -890,6 +899,13 @@ protected:
 	ControlBarStages m_currentControlBarStage;
 
 	Bool m_UIDirty;																///< the context UI must be re-evaluated
+
+#if defined(__ANDROID__)
+	void applyPhoneLayout();											///< full phone HUD layout pass (ControlBarPhoneLayout.cpp)
+	void updatePhoneDrawer();											///< per-frame: grow the command drawer with the rows in use
+	Bool m_phoneLayoutDirty;											///< the phone layout must be re-applied
+	Int  m_phoneVisibleRows;											///< command grid rows currently laid out (-1 = none yet)
+#endif
 
 	CommandButton *m_commandButtons;							///< list of possible commands to have
 	CommandSet *m_commandSets;										///< list of all command sets defined

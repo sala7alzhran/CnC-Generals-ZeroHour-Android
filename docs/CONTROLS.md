@@ -22,6 +22,23 @@ A battle starts about ⅓ zoomed in from the widest view, so units are readable;
 more. The zoom range on phones is roughly 70–550 world units above the ground (the PC default on
 a wide screen was about 190–590).
 
+## The HUD in a battle
+
+The PC command bar is gone; the battlefield fills the screen and the controls sit in the thumb
+zones (design: [MOBILE-UX-SPEC.md §6](MOBILE-UX-SPEC.md), implementation:
+[fixes/phone-hud.md](fixes/phone-hud.md)).
+
+| Where | What |
+|---|---|
+| **Top-left ☰** | Pause / in-game menu (ESC). |
+| **Top strip** | Money, the power bar, the **★ generals star** (opens the promotion screen; it flashes when you have points to spend), and your **general's powers** as a row of tiles once you have any — each shows its recharge clock. In multiplayer: chat and beacon buttons. |
+| **Top-right** | The **minimap**. Tap it to jump the camera there; with units selected, tap to send them (attack-move if that mode is on). It glows when your base is under attack. |
+| **Left column** | **1 2 3 4** control groups: tap = select the group, tap again quickly = also centre the camera on it, **hold ≈ ⅓ s** (short vibration) = assign the current selection to that group. Empty groups are dimmed. **ALL** = select every unit. **IDLE** = select the next idle worker/dozer (dimmed when nobody is idle). |
+| **Right drawer** | Appears only while something you selected has commands, and grows upward from the corner with the number of commands. Big tiles: build (dozer), train and upgrade (factory), abilities, sell, repair, rally point, stop/evacuate for garrisons. The first commands are in the bottom row, under your thumb. Above the tiles: the unit portrait with its upgrade/veterancy icons, or the **production queue** while something is being built (tap an item to cancel it; the first shows its progress). |
+
+Taps on the drawer's empty parts do nothing (they never hit a unit behind it); taps anywhere
+else on the battlefield work as in the gesture table above.
+
 ## Menus, HUD and building placement
 
 Wherever the finger is on a window rather than on the battlefield (menus, the command bar, the

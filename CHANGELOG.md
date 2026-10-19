@@ -49,6 +49,12 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
 - **Changed** the camera range on Android to 70–550 world units above ground (absolute, no
   aspect‑ratio compensation) and battles start 33 % zoomed in; the alternate‑mouse option is
   pinned off so a tap always selects/orders and a 2‑finger tap always deselects.
+- **Added** the smart phone HUD (MOBILE‑UX‑SPEC Phase C‑1): the battlefield fills the screen; the
+  control bar's own windows are re‑laid‑out at runtime into a top strip (☰, money, power, ★,
+  the general's powers row), a top‑right minimap and a right‑thumb command drawer of 9.5 mm tiles
+  that appears only while the selection has commands; a left‑thumb column adds control groups
+  1–4 (tap / tap again / long‑press to assign), ALL and IDLE. All geometry from one header
+  (`AndroidHud.h`), sized in mm from the display density.
 
 ## Audio
 - **Fixed** total silence: `SDL3Main.cpp` forced desktop OpenAL drivers on Android (`__linux__`

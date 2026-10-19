@@ -43,6 +43,13 @@
 #include "GameClient/ControlBar.h"
 #if defined(__ANDROID__)
 #include "GameClient/VideoPlayer.h"   // TheVideoPlayer->firstStream() for the Skip button
+#include "GameClient/AndroidHud.h"    // shared geometry of the phone HUD overlay buttons
+#include "GameClient/DisplayString.h"
+#include "GameClient/DisplayStringManager.h"
+#include "GameClient/GameFont.h"
+#include "Common/Player.h"
+#include "Common/PlayerList.h"
+#include "GameLogic/Squad.h"
 #endif
 #include "W3DDevice/GameClient/W3DAssetManager.h"
 #include "W3DDevice/GameClient/W3DGUICallbacks.h"
@@ -386,29 +393,89 @@ void W3DInGameUI::reset()
 }
 
 #if defined(__ANDROID__)
-// GeneralsX @feature Android on-screen ESC/menu button (top-left), themed to match
-// the in-game HUD buttons. Tapping it invokes ToggleQuitMenu() — the same action as
-// the desktop ESC key. The tap hit-test lives in SDL3GameEngine.cpp's touch layer;
-// KEEP THIS GEOMETRY IN SYNC WITH kMenuBtn* THERE.
+// GeneralsX @feature Android smart HUD 19/10/2026 Overlay buttons that are not GameWindows: the ☰
+// menu (top-left) and the left-thumb column (control groups 1-4, ALL, IDLE). Their geometry comes
+// from AndroidHud.h, shared with the touch layer that hit-tests them (SDL3GameEngine.cpp) and with
+// the control bar's phone layout, so draw, hit-test and layout cannot drift apart. Drawn after the
+// window system so they sit on top of the HUD.
+extern Int TheAndroidOverlayPressed;   // the overlay the finger is holding down (-1: none); set by the touch layer
 namespace {
-	const Int kMenuBtnX = 16, kMenuBtnY = 14, kMenuBtnW = 108, kMenuBtnH = 56;
-	void drawAndroidMenuButton()
+	DisplayString *s_overlayLabel[ AndroidHud::OVERLAY_COUNT ] = { nullptr };
+	GameFont      *s_overlayFont = nullptr;
+	const WideChar *const kOverlayText[ AndroidHud::OVERLAY_COUNT ] = { L"", L"1", L"2", L"3", L"4", L"ALL", L"IDLE" };
+
+	// dark translucent panel + gold bevel border (matches the game's tan/gold button trim)
+	void drawOverlayFrame( const AndroidHud::Rect &r, Bool pressed, Bool dimmed )
 	{
-		if (!TheDisplay)
+		const UnsignedByte alpha = dimmed ? 110 : 200;
+		TheDisplay->drawFillRect( r.x, r.y, r.w, r.h, pressed ? GameMakeColor( 70, 60, 36, 230 ) : GameMakeColor( 18, 22, 28, alpha ) );
+		TheDisplay->drawOpenRect( r.x, r.y, r.w, r.h, 2.0f, GameMakeColor( 214, 184, 112, dimmed ? 120 : 240 ) );
+		TheDisplay->drawOpenRect( r.x + 3, r.y + 3, r.w - 6, r.h - 6, 1.0f, GameMakeColor( 120, 100, 60, dimmed ? 80 : 170 ) );
+	}
+
+	void drawOverlayLabel( Int id, const AndroidHud::Rect &r, Bool dimmed )
+	{
+		if( !TheDisplayStringManager )
 			return;
-		const Int x = kMenuBtnX, y = kMenuBtnY, w = kMenuBtnW, h = kMenuBtnH;
-		// dark translucent panel + gold bevel border (matches the game's tan/gold button trim)
-		TheDisplay->drawFillRect(x, y, w, h, GameMakeColor(18, 22, 28, 180));
-		TheDisplay->drawOpenRect(x, y, w, h, 2.0f, GameMakeColor(214, 184, 112, 240));
-		TheDisplay->drawOpenRect(x + 3, y + 3, w - 6, h - 6, 1.0f, GameMakeColor(120, 100, 60, 170));
-		// "menu" glyph: three stacked gold bars
-		const Int barW = 46, barH = 5;
-		const Int bx = x + (w - barW) / 2;
-		const Int cy = y + h / 2;
-		const UnsignedInt bar = GameMakeColor(230, 205, 140, 245);
-		TheDisplay->drawFillRect(bx, cy - 13, barW, barH, bar);
-		TheDisplay->drawFillRect(bx, cy - 2,  barW, barH, bar);
-		TheDisplay->drawFillRect(bx, cy + 9,  barW, barH, bar);
+		if( !s_overlayFont && TheControlBar )
+			s_overlayFont = TheControlBar->getPhoneHudFont( 3.6f );
+		DisplayString *&str = s_overlayLabel[ id ];
+		if( !str )
+		{
+			str = TheDisplayStringManager->newDisplayString();
+			if( !str )
+				return;
+			if( s_overlayFont )
+				str->setFont( s_overlayFont );
+			str->setText( UnicodeString( kOverlayText[ id ] ) );
+		}
+		Int w = 0, h = 0;
+		str->getSize( &w, &h );
+		const Color text = dimmed ? GameMakeColor( 180, 170, 140, 140 ) : GameMakeColor( 240, 225, 180, 255 );
+		str->draw( r.x + (r.w - w) / 2, r.y + (r.h - h) / 2, text, GameMakeColor( 0, 0, 0, 200 ) );
+	}
+
+	Bool controlGroupIsEmpty( Int group )
+	{
+		Player *player = ThePlayerList ? ThePlayerList->getLocalPlayer() : nullptr;
+		if( !player )
+			return TRUE;
+		Squad *squad = player->getHotkeySquad( group );
+		return !squad || squad->getLiveObjects().empty();
+	}
+
+	void drawAndroidHud()
+	{
+		if( !TheDisplay )
+			return;
+		const Int W = TheDisplay->getWidth(), H = TheDisplay->getHeight();
+		const AndroidHud::Metrics m = AndroidHud::computeMetrics( W, H, AndroidHud::pixelsPerMmFor( W, H ) );
+
+		// ☰ menu: three stacked gold bars
+		{
+			const AndroidHud::Rect &r = m.overlay[ AndroidHud::OVERLAY_MENU ];
+			drawOverlayFrame( r, TheAndroidOverlayPressed == AndroidHud::OVERLAY_MENU, FALSE );
+			const Int barH = r.h / 12 < 4 ? 4 : r.h / 12;
+			const Int barW = r.w * 2 / 5;
+			const Int bx = r.x + (r.w - barW) / 2, cy = r.y + r.h / 2, step = barH * 2;
+			const UnsignedInt bar = GameMakeColor( 230, 205, 140, 245 );
+			for( Int k = -1; k <= 1; ++k )
+				TheDisplay->drawFillRect( bx, cy + k * step - barH / 2, barW, barH, bar );
+		}
+
+		// left column: groups 1-4 (dimmed while empty), ALL, IDLE (dimmed while nobody is idle)
+		for( Int i = 0; i < AndroidHud::NUM_CONTROL_GROUPS; ++i )
+		{
+			const Int id = AndroidHud::OVERLAY_GROUP_1 + i;
+			const Bool dimmed = controlGroupIsEmpty( i );
+			drawOverlayFrame( m.overlay[ id ], TheAndroidOverlayPressed == id, dimmed );
+			drawOverlayLabel( id, m.overlay[ id ], dimmed );
+		}
+		drawOverlayFrame( m.overlay[ AndroidHud::OVERLAY_SELECT_ALL ], TheAndroidOverlayPressed == AndroidHud::OVERLAY_SELECT_ALL, FALSE );
+		drawOverlayLabel( AndroidHud::OVERLAY_SELECT_ALL, m.overlay[ AndroidHud::OVERLAY_SELECT_ALL ], FALSE );
+		const Bool noIdle = !TheInGameUI || TheInGameUI->getIdleWorkerCount() == 0;
+		drawOverlayFrame( m.overlay[ AndroidHud::OVERLAY_IDLE_WORKER ], TheAndroidOverlayPressed == AndroidHud::OVERLAY_IDLE_WORKER, noIdle );
+		drawOverlayLabel( AndroidHud::OVERLAY_IDLE_WORKER, m.overlay[ AndroidHud::OVERLAY_IDLE_WORKER ], noIdle );
 	}
 
 	// On-screen SKIP button (top-right), shown during any video/cutscene. Tap → ESC (skip),
@@ -494,11 +561,11 @@ void W3DInGameUI::draw()
 
 #if defined(__ANDROID__)
 	// Drawn last so it sits on top of the HUD/video. During a cutscene show the SKIP button
-	// (top-right); otherwise, while actually playing, show the ESC/menu button (top-left).
+	// (top-right); otherwise, while actually playing, the overlay buttons (menu, control groups).
 	if (TheVideoPlayer && TheVideoPlayer->firstStream())
 		drawAndroidSkipButton();
 	else if (TheGameLogic && TheGameLogic->isInGame() && !TheGameLogic->isInShellGame() && !isQuitMenuVisible())
-		drawAndroidMenuButton();
+		drawAndroidHud();
 #endif
 
 	TheDisplay->endBatch();

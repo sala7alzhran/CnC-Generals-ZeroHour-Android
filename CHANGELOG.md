@@ -23,6 +23,14 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
   up/down arrow overrides this until the selection changes. On Android the world is always drawn
   full height (`m_viewportHeightScale = 1`), so folding never resizes the battlefield view.
 
+## Menus
+- **Fixed** the first tap on the main menu after launch only waking the menu ("Solo Play" needed
+  two taps): on Android the menu is woken right away, as the PC does on the first mouse movement.
+- **Fixed** the Skirmish colour column reading `???` (now "Random") and a label missing from the
+  player's CSF reading `MISSING: 'GUI:CustomMission'` (now "Custom Mission").
+- **Fixed** the log spam: `D3DRS_PATCHSEGMENTS`, which DXVK's D3D8 layer doesn't implement and
+  warned about on every shader change (~13 KB/s into `ccg_log.txt`), is no longer set on Android.
+
 ## Rendering (DXVK → Vulkan on Mali‑G57)
 - **Fixed** the Mali shader‑compiler crash in missions — root cause: D3D user clip planes
   (`gl_ClipDistance`). Disabling them unblocked gameplay and full model deployment.

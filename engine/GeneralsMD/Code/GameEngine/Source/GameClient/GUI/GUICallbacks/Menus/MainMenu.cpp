@@ -677,6 +677,19 @@ void MainMenuInit( WindowLayout *layout, void *userData )
 
 		TheTransitionHandler->reverse("FadeWholeScreen");
 		FirstTimeRunningTheGame  = FALSE;
+#if defined(__ANDROID__)
+		// GeneralsX @bugfix Android 19/10/2026 On the PC the first main menu stays inert until the
+		// mouse moves (MainMenuInput). A phone has no idle mouse, so the player's first tap was spent
+		// waking the menu and "Solo Play" needed two taps. Wake it right away, the same way the first
+		// mouse movement does.
+		initialGadgetDelay = 1;
+		if (dropDownWindows[DROPDOWN_MAIN])
+			dropDownWindows[DROPDOWN_MAIN]->winHide(FALSE);
+		TheTransitionHandler->setGroup("MainMenuFade", TRUE);
+		TheTransitionHandler->setGroup("MainMenuDefaultMenu");
+		TheMouse->setVisibility(TRUE);
+		notShown = FALSE;
+#endif
 	}
 	else
 	{

@@ -142,6 +142,7 @@ set(GAMEENGINE_SRC
 #    Include/GameClient/ClientRandomValue.h
 #    Include/GameClient/Color.h
 #    Include/GameClient/CommandXlat.h
+    Include/GameClient/QuickBattleMenu.h
     Include/GameClient/ControlBar.h
     Include/GameClient/ControlBarResizer.h
     Include/GameClient/ControlBarScheme.h
@@ -749,6 +750,7 @@ set(GAMEENGINE_SRC
     Source/GameClient/GUI/GUICallbacks/Menus/LanLobbyMenu.cpp
     Source/GameClient/GUI/GUICallbacks/Menus/LanMapSelectMenu.cpp
     Source/GameClient/GUI/GUICallbacks/Menus/MainMenu.cpp
+    Source/GameClient/GUI/GUICallbacks/Menus/QuickBattleMenu.cpp
     Source/GameClient/GUI/GUICallbacks/Menus/MapSelectMenu.cpp
     Source/GameClient/GUI/GUICallbacks/Menus/NetworkDirectConnect.cpp
     Source/GameClient/GUI/GUICallbacks/Menus/OptionsMenu.cpp

@@ -81,6 +81,9 @@
 #include "GameClient/GadgetPushButton.h"
 #include <SDL3/SDL.h>
 #endif
+#if defined(__ANDROID__)
+#include "GameClient/QuickBattleMenu.h"   // GeneralsX @feature Android quick battle: phone-first skirmish entry
+#endif
 
 
 // PRIVATE DATA ///////////////////////////////////////////////////////////////////////////////////
@@ -533,6 +536,11 @@ void MainMenuInit( WindowLayout *layout, void *userData )
 
 	// get pointers to the window buttons
 	parentMainMenu = TheWindowManager->winGetWindowFromId( nullptr, mainMenuID );
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android quick battle 19/10/2026 The QUICK BATTLE button and its screen live
+	// in the main menu's tree (QuickBattleMenu.cpp) and go away with it.
+	QuickBattleAttachToMainMenu( parentMainMenu );
+#endif
 	//buttonCampaign = TheWindowManager->winGetWindowFromId( parentMainMenu, campaignID );
 	buttonSinglePlayer = TheWindowManager->winGetWindowFromId( parentMainMenu, buttonSinglePlayerID );
 	buttonMultiPlayer = TheWindowManager->winGetWindowFromId( parentMainMenu, buttonMultiPlayerID );
@@ -714,6 +722,9 @@ void MainMenuShutdown( WindowLayout *layout, void *userData )
 {
 	if (!startGame)
 		isShuttingDown = TRUE;
+#if defined(__ANDROID__)
+	QuickBattleDetach();   // GeneralsX @feature Android quick battle
+#endif
 	if (fallbackCreditLabel)
 	{
 		TheWindowManager->winDestroy(fallbackCreditLabel);
@@ -1383,6 +1394,10 @@ WindowMsgHandledType MainMenuSystem( GameWindow *window, UnsignedInt msg,
 
 			if(buttonPushed)
 				break;
+#if defined(__ANDROID__)
+			if( QuickBattleHandleButton( control ) )   // GeneralsX @feature Android quick battle
+				break;
+#endif
 #if defined(RTS_DEBUG) || defined RTS_PROFILE_LEGACY
 			if( control == buttonCampaign )
 			{

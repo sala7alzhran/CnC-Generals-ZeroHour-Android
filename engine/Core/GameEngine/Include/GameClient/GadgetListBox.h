@@ -76,6 +76,11 @@ extern Int  GadgetListBoxGetNumColumns( GameWindow *listbox );
 extern Int  GadgetListBoxGetColumnWidth( GameWindow *listbox, Int column );
 
 extern void GadgetListBoxSetFont( GameWindow *listbox, GameFont *font );
+#if defined(__ANDROID__)
+/// GeneralsX @feature Android 19/10/2026 Height of one row of a listbox, given its natural (font)
+/// height. A dropdown's list gets finger-sized rows on a phone; every other listbox is unchanged.
+extern Int GadgetListBoxAndroidRowHeight( GameWindow *listbox, Int naturalHeight );
+#endif
 extern UnicodeString GadgetListBoxGetText( GameWindow *listbox, Int row, Int column = 0);
 extern UnicodeString GadgetListBoxGetTextAndColor( GameWindow *listbox, Color *color, Int row, Int column = 0);
 extern Int GadgetListBoxAddEntryText( GameWindow *listbox,	UnicodeString text,	Color color, Int row, Int column = -1, Bool overwrite = TRUE);

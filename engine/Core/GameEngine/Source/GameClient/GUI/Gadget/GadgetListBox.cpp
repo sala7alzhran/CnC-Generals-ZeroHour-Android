@@ -62,6 +62,9 @@
 #include "GameClient/GadgetSlider.h"
 #include "GameClient/GameWindowGlobal.h"
 #include "GameClient/Keyboard.h"
+#if defined(__ANDROID__)
+#include "GameClient/Display.h"
+#endif
 
 
 // DEFINES ////////////////////////////////////////////////////////////////////
@@ -280,6 +283,21 @@ static void adjustDisplay( GameWindow *window, Int adjustment,
 
 }
 
+#if defined(__ANDROID__)
+// GeneralsX @feature Android 19/10/2026 A dropdown's list rows are only as tall as the font
+// (about 2 mm on a phone), too small to pick with a finger. Rows of a combo box's list are at
+// least 7 % of the display height: about 5 mm on a phone held sideways, whose short side is
+// 65-75 mm. The hit test and the draw both read the row heights, so they stay in step.
+Int GadgetListBoxAndroidRowHeight( GameWindow *listbox, Int naturalHeight )
+{
+	GameWindow *parent = listbox ? listbox->winGetParent() : nullptr;
+	if( parent == nullptr || !BitIsSet( parent->winGetInstanceData()->getStyle(), GWS_COMBO_BOX ) || TheDisplay == nullptr )
+		return naturalHeight;
+	const Int minHeight = (Int)( TheDisplay->getHeight() * 0.07f );
+	return naturalHeight > minHeight ? naturalHeight : minHeight;
+}
+#endif
+
 // computeTotalHeight =========================================================
 /** Compute Total Height and fill in listHeight values */
 //=============================================================================
@@ -323,6 +341,9 @@ static void computeTotalHeight( GameWindow *window )
 			if(cellHeight > tempHeight)
 				tempHeight = cellHeight;
 		}
+#if defined(__ANDROID__)
+		tempHeight = GadgetListBoxAndroidRowHeight( window, tempHeight );
+#endif
 		list->listData[i].height = tempHeight;
 		height += (list->listData[i].height + 1);
 		list->listData[i].listHeight = height;
@@ -514,6 +535,9 @@ static Int addEntry( UnicodeString *string, Int color, Int row, Int column, Game
 		}
 
 		displayString->getSize( nullptr, &rowHeight );
+#if defined(__ANDROID__)
+		rowHeight = GadgetListBoxAndroidRowHeight( window, rowHeight );
+#endif
 		if (rowHeight > oldRowHeight)
 		{
 			totalHeight = oldTotalHeight + (rowHeight - oldRowHeight);

@@ -62,6 +62,9 @@
 #include "GameClient/GadgetPushButton.h"
 #include "GameClient/GadgetSlider.h"
 #include "GameClient/GameWindowGlobal.h"
+#if defined(__ANDROID__)
+#include "GameClient/Display.h"
+#endif
 
 // DEFINES ////////////////////////////////////////////////////////////////////
 
@@ -81,6 +84,40 @@
 // PUBLIC FUNCTIONS ///////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 void HideListBox(GameWindow * window);
+
+// Height of a combo box's open list showing `rows` rows, with the list's top `listTop` pixels below
+// the combo box's own top.
+static Int comboListHeight( GameWindow *comboBox, GameWindow *listBox, Int &rows, Int listTop )
+{
+	const Int fontHeight = TheWindowManager->winFontHeight( listBox->winGetInstanceData()->getFont() );
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android 19/10/2026 Finger-sized rows (GadgetListBoxAndroidRowHeight). If
+	// the taller list would run off the bottom of the screen, show fewer rows and let it scroll.
+	const Int rowHeight = GadgetListBoxAndroidRowHeight( listBox, fontHeight );
+	if( TheDisplay != nullptr && rows > 1 )
+	{
+		Int x, y;
+		comboBox->winGetScreenPosition( &x, &y );
+		const Int room = (Int)TheDisplay->getHeight() - ( y + listTop ) - 4;
+		const Int wanted = rows;
+		while( rows > 1 && rowHeight * rows + rows * 2 + 4 > room )
+			--rows;
+		if( rows < wanted )
+		{
+			ListboxData *listData = (ListboxData *)listBox->winGetUserData();
+			if( listData->upButton )
+				listData->upButton->winHide( FALSE );
+			if( listData->downButton )
+				listData->downButton->winHide( FALSE );
+			if( listData->slider )
+				listData->slider->winHide( FALSE );
+		}
+	}
+	return rowHeight * rows + rows * 2 + 4;
+#else
+	return fontHeight * rows + rows * 2 + 4;
+#endif
+}
 
 // GadgetComboBoxInput =========================================================
 /** Handle input for Combo box */
@@ -199,7 +236,7 @@ WindowMsgHandledType GadgetComboBoxInput( GameWindow *window, UnsignedInt msg,
 
 						}
 
-						newSize.y = ((TheWindowManager->winFontHeight( listInstData->getFont() ) ) * multiplier) + multiplier * 2 + 4;
+						newSize.y = comboListHeight( window, listBox, multiplier, winSize.y );
 						window->winSetSize(winSize.x , winSize.y + newSize.y );
 						listBox->winSetPosition(0, winSize.y);
 
@@ -544,7 +581,7 @@ WindowMsgHandledType GadgetComboBoxSystem( GameWindow *window, UnsignedInt msg,
 					if(listData->slider)
 						listData->slider->winHide(FALSE);
 				}
-				newSize.y = ((TheWindowManager->winFontHeight( listInstData->getFont() ) ) * multiplier) + multiplier * 2 + 4;
+				newSize.y = comboListHeight( window, listBox, multiplier, editBoxSize.y );
 				listBox->winSetPosition(0, editBoxSize.y);
 				listBox->winSetSize(listX , newSize.y);
 			}
@@ -681,7 +718,7 @@ WindowMsgHandledType GadgetComboBoxSystem( GameWindow *window, UnsignedInt msg,
 
 						}
 
-						newSize.y = ((TheWindowManager->winFontHeight( listInstData->getFont() ) ) * multiplier) + multiplier * 2 + 4;
+						newSize.y = comboListHeight( window, listBox, multiplier, winSize.y );
 						window->winSetSize(winSize.x , winSize.y + newSize.y );
 						listBox->winSetPosition(0, winSize.y);
 

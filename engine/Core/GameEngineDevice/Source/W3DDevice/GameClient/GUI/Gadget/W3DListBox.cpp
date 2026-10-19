@@ -421,8 +421,19 @@ static void drawListBoxText( GameWindow *window, WinInstanceData *instData,
 
 						// draw this text after setting the clip region for it
 						string->setClipRegion( &columnRegion );
+						Int textY = drawY;
+#if defined(__ANDROID__)
+						// GeneralsX @feature Android 19/10/2026 A dropdown row can be taller than its
+						// text on a phone (GadgetListBoxAndroidRowHeight): centre the text in it.
+						{
+							Int textHeight = 0;
+							string->getSize( nullptr, &textHeight );
+							if( textHeight > 0 && list->listData[i].height > textHeight )
+								textY += ( list->listData[i].height - textHeight ) / 2;
+						}
+#endif
 						string->draw( columnX + TEXT_X_OFFSET,
-													drawY,
+													textY,
 													textColor,
 													dropColor );
 

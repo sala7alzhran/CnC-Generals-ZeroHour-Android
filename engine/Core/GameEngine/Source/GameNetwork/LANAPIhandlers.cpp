@@ -38,6 +38,7 @@
 #include "Common/UserPreferences.h"
 #include "GameNetwork/LANAPI.h"
 #include "GameNetwork/LANAPICallbacks.h"
+#include "GameNetwork/IPEnumeration.h"
 #include "GameClient/MapUtil.h"
 
 // GeneralsX @build BenderAI 13/02/2026 WideCharWindows conversion helpers (fighter19 pattern)
@@ -516,10 +517,23 @@ void LANAPI::handleJoinAccept( LANMessage *msg, UnsignedInt senderIP )
 	/* 	fprintf(stderr, "[LAN86] handleJoinAccept sender=%d.%d.%d.%d playerIP=%d.%d.%d.%d localIP=%d.%d.%d.%d pending=%d slot=%d game=%ls\n",
 		PRINTF_IP_AS_4_INTS(senderIP), PRINTF_IP_AS_4_INTS(msg->GameJoined.playerIP), PRINTF_IP_AS_4_INTS(m_localIP),
 		m_pendingAction, msg->GameJoined.slotPosition, GetWindowsWideCharAsWchar(msg->GameJoined.gameName)); */
-	if (msg->GameJoined.playerIP == m_localIP) // Is it for us?
+	// GeneralsX @bugfix Android 19/10/2026 From upstream GeneralsX #346 (Mr. Meesseeks): the host records us by
+	// the source address of our join request, which on a machine with several interfaces need not be
+	// m_localIP. Accept the answer for any of our addresses.
+	if (msg->GameJoined.playerIP == m_localIP || IPEnumeration::isLocalInterfaceAddress(msg->GameJoined.playerIP)) // Is it for us?
 	{
 		if (m_pendingAction == ACT_JOIN) // Are we trying to join?
 		{
+			// Adopt the address the host knows us by, so our slot below, the "is this slot me" checks
+			// and the in-game connection (bound to m_localIP at game start) all agree with the host.
+			// Assigned directly: the POSIX lobby socket listens on every interface and needs no rebind.
+			if (msg->GameJoined.playerIP != m_localIP)
+			{
+				fprintf(stderr, "INFO: [LAN] host knows us as %d.%d.%d.%d, switching local IP from %d.%d.%d.%d\n",
+					PRINTF_IP_AS_4_INTS(msg->GameJoined.playerIP), PRINTF_IP_AS_4_INTS(m_localIP));
+				m_localIP = msg->GameJoined.playerIP;
+			}
+
 			// GeneralsX @bugfix BenderAI 13/02/2026 Wrap WideCharWindows with GetWindowsWideCharAsWchar (fighter19 pattern)
 			m_currentGame = LookupGame(UnicodeString(GetWindowsWideCharAsWchar(msg->GameJoined.gameName)));
 
@@ -575,7 +589,8 @@ void LANAPI::handleJoinDeny( LANMessage *msg, UnsignedInt senderIP )
 	/* 	fprintf(stderr, "[LAN86] handleJoinDeny sender=%d.%d.%d.%d playerIP=%d.%d.%d.%d localIP=%d.%d.%d.%d pending=%d reason=%d game=%ls\n",
 		PRINTF_IP_AS_4_INTS(senderIP), PRINTF_IP_AS_4_INTS(msg->GameJoined.playerIP), PRINTF_IP_AS_4_INTS(m_localIP),
 		m_pendingAction, msg->GameNotJoined.reason, GetWindowsWideCharAsWchar(msg->GameNotJoined.gameName)); */
-	if (msg->GameJoined.playerIP == m_localIP) // Is it for us?
+	// GeneralsX @bugfix Android 19/10/2026 From upstream GeneralsX #346: a refusal may name any of our addresses (see handleJoinAccept).
+	if (msg->GameJoined.playerIP == m_localIP || IPEnumeration::isLocalInterfaceAddress(msg->GameJoined.playerIP)) // Is it for us?
 	{
 		if (m_pendingAction == ACT_JOIN) // Are we trying to join?
 		{

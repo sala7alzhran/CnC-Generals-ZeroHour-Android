@@ -30,6 +30,7 @@
 #include "Common/GameState.h"
 #include "Common/Registry.h"
 #include "GameNetwork/LANAPI.h"
+#include "GameNetwork/IPEnumeration.h"
 #include "GameNetwork/networkutil.h"
 #include "Common/GlobalData.h"
 #include "Common/RandomValue.h"
@@ -74,6 +75,13 @@ static Int GatherSubnetBroadcastAddrs(UnsignedInt localIP, UnsignedInt *outAddrs
 			continue;
 		}
 
+		// GeneralsX @bugfix Android 19/10/2026 From upstream GeneralsX #307 (BenderAI,
+		// https://github.com/fbraz3/GeneralsX/pull/307): skip interfaces without an active carrier so LAN discovery broadcasts are not sent to idle Docker/VM bridges.
+		if ((ifa->ifa_flags & IFF_RUNNING) == 0)
+		{
+			continue;
+		}
+
 		const sockaddr_in *addr = reinterpret_cast<const sockaddr_in *>(ifa->ifa_addr);
 		const UnsignedInt hostAddr = ntohl(addr->sin_addr.s_addr);
 		if (localIP != 0 && hostAddr != localIP)
@@ -81,8 +89,11 @@ static Int GatherSubnetBroadcastAddrs(UnsignedInt localIP, UnsignedInt *outAddrs
 			continue;
 		}
 
+		// GeneralsX @bugfix Android 19/10/2026 ifa_broadaddr shares storage with ifa_dstaddr and is only a
+		// broadcast address when IFF_BROADCAST is set. On a point-to-point link (the tun0 of a VPN app)
+		// it is the peer or our own address, so derive the subnet broadcast from the netmask instead.
 		UnsignedInt bcast = 0;
-		if (ifa->ifa_broadaddr != nullptr && ifa->ifa_broadaddr->sa_family == AF_INET)
+		if ((ifa->ifa_flags & IFF_BROADCAST) != 0 && ifa->ifa_broadaddr != nullptr && ifa->ifa_broadaddr->sa_family == AF_INET)
 		{
 			const sockaddr_in *baddr = reinterpret_cast<const sockaddr_in *>(ifa->ifa_broadaddr);
 			bcast = ntohl(baddr->sin_addr.s_addr);
@@ -91,6 +102,10 @@ static Int GatherSubnetBroadcastAddrs(UnsignedInt localIP, UnsignedInt *outAddrs
 		{
 			const sockaddr_in *nmask = reinterpret_cast<const sockaddr_in *>(ifa->ifa_netmask);
 			const UnsignedInt mask = ntohl(nmask->sin_addr.s_addr);
+			if (mask == 0xFFFFFFFFu || mask == 0xFFFFFFFEu)
+			{
+				continue; // /32 or /31: no broadcast address on this link
+			}
 			bcast = (hostAddr & mask) | (~mask);
 		}
 		else
@@ -176,7 +191,14 @@ void LANAPI::init()
 	m_gameStartTime = 0;
 	m_gameStartSeconds = 0;
 	m_transport->reset();
+#ifdef _WIN32
 	m_transport->init(m_localIP, lobbyPort);
+#else
+	// GeneralsX @bugfix Android 19/10/2026 From upstream GeneralsX #201 (Mr. Meesseeks,
+	// https://github.com/fbraz3/GeneralsX/pull/201): bind the lobby socket to INADDR_ANY on POSIX. Unlike Windows, Linux/Android/macOS never deliver a broadcast to a socket bound to a unicast
+	// address, so a socket bound to m_localIP heard neither game announcements nor broadcast join requests.
+	m_transport->init(INADDR_ANY, lobbyPort);
+#endif
 	m_transport->allowBroadcasts(true);
 
 	m_pendingAction = ACT_NONE;
@@ -265,6 +287,10 @@ void LANAPI::sendMessage(LANMessage *msg, UnsignedInt ip /* = 0 */)
 			GetMessageTypeString(msg->messageType).str(), PRINTF_IP_AS_4_INTS(ip), lobbyPort, queued));
 		/* 		fprintf(stderr, "[LAN86] send direct type=%u dst=%d.%d.%d.%d:%d queued=%d\n",
 			msg->messageType, PRINTF_IP_AS_4_INTS(ip), lobbyPort, queued); */
+		// GeneralsX @bugfix Android 19/10/2026 A message addressed to one player goes to that player only,
+		// as in TheSuperHackers' else-if. Falling through also broadcast every join reply and game-info
+		// answer to the whole subnet.
+		return;
 	}
 	// GeneralsX @bugfix GitHubCopilot 12/04/2026 Prefer directed fan-out for in-game state/control packets to avoid cross-platform broadcast loss.
 	const Bool shouldUseDirectedFanout = (m_currentGame != nullptr)
@@ -486,7 +512,12 @@ void LANAPI::update()
 		{
 			// Process the new message
 			UnsignedInt senderIP = m_transport->m_inBuffer[i].addr;
-			if (senderIP == m_localIP)
+			// GeneralsX @bugfix Android 19/10/2026 From upstream GeneralsX #346 (Mr. Meesseeks,
+			// https://github.com/fbraz3/GeneralsX/pull/346): the POSIX lobby socket listens on
+			// every interface, so our own broadcast can come back from another local address (e.g. a
+			// 255.255.255.255 fallback that leaves through the cellular interface). Treating it as a
+			// stranger with our own name made joins fail with "duplicate name".
+			if (senderIP == m_localIP || IPEnumeration::isLocalInterfaceAddress(senderIP))
 			{
 				/* 				fprintf(stderr, "[LAN86] recv self-echo type=%u from %d.%d.%d.%d ignored\n",
 					((LANMessage *)(m_transport->m_inBuffer[i].data))->messageType, PRINTF_IP_AS_4_INTS(senderIP)); */
@@ -495,9 +526,34 @@ void LANAPI::update()
 			}
 
 			LANMessage *msg = (LANMessage *)(m_transport->m_inBuffer[i].data);
-			/* 			fprintf(stderr, "[LAN86] recv type=%u len=%d from %d.%d.%d.%d local=%d.%d.%d.%d\n",
-				msg->messageType, m_transport->m_inBuffer[i].length,
-				PRINTF_IP_AS_4_INTS(senderIP), PRINTF_IP_AS_4_INTS(m_localIP)); */
+			// GeneralsX @bugfix Android 19/10/2026 Log what the lobby receives, at most 10 lines per 5 seconds
+			// (peers announce themselves every 10 s, so this is quiet unless something floods the port).
+			{
+				static UnsignedInt s_recvLogWindowStart = 0;
+				static Int s_recvLogLines = 0;
+				static Int s_recvLogSuppressed = 0;
+				if (now - s_recvLogWindowStart >= 5000)
+				{
+					if (s_recvLogSuppressed > 0)
+					{
+						fprintf(stderr, "INFO: [LAN] recv: %d more packets not logged\n", s_recvLogSuppressed);
+					}
+					s_recvLogWindowStart = now;
+					s_recvLogLines = 0;
+					s_recvLogSuppressed = 0;
+				}
+				if (s_recvLogLines < 10)
+				{
+					++s_recvLogLines;
+					fprintf(stderr, "INFO: [LAN] recv %s len=%d from %d.%d.%d.%d (local %d.%d.%d.%d)\n",
+						GetMessageTypeString(msg->messageType).str(), m_transport->m_inBuffer[i].length,
+						PRINTF_IP_AS_4_INTS(senderIP), PRINTF_IP_AS_4_INTS(m_localIP));
+				}
+				else
+				{
+					++s_recvLogSuppressed;
+				}
+			}
 			//DEBUG_LOG(("LAN message type %s from %ls (%s@%s)", GetMessageTypeString(msg->messageType).str(),
 			//	msg->name, msg->userName, msg->hostName));
 			switch (msg->messageType)
@@ -1452,12 +1508,44 @@ Bool LANAPI::SetLocalIP( UnsignedInt localIP )
 		PRINTF_IP_AS_4_INTS(oldIP), PRINTF_IP_AS_4_INTS(m_localIP), lobbyPort); */
 
 	m_transport->reset();
+#ifdef _WIN32
 	retval = m_transport->init(m_localIP, lobbyPort);
+#else
+	// GeneralsX @bugfix Android 19/10/2026 From upstream GeneralsX #201: listen on INADDR_ANY on POSIX so
+	// broadcasts arrive (see LANAPI::init). m_localIP still selects the subnet we broadcast to and is
+	// the address we advertise to the other players.
+	retval = m_transport->init(INADDR_ANY, lobbyPort);
+#endif
 	Bool broadcastsEnabled = m_transport->allowBroadcasts(true);
 	DEBUG_LOG(("LANAPI::SetLocalIP - init=%d allowBroadcasts=%d local=%d.%d.%d.%d:%d",
 		retval, broadcastsEnabled, PRINTF_IP_AS_4_INTS(m_localIP), lobbyPort));
 	/* 	fprintf(stderr, "[LAN86] SetLocalIP result init=%d allowBroadcasts=%d local=%d.%d.%d.%d:%d\n",
 		retval, broadcastsEnabled, PRINTF_IP_AS_4_INTS(m_localIP), lobbyPort); */
+
+	// GeneralsX @bugfix Android 19/10/2026 One line in the log (ccg_log.txt on Android) saying which
+	// address and interface the lobby uses and where its discovery broadcasts go.
+	{
+		IPEnumeration IPs;
+		EnumeratedIP *entry = IPs.findIP(m_localIP);
+		AsciiString interfaceName = (entry != nullptr && !entry->getInterfaceName().isEmpty()) ? entry->getInterfaceName() : AsciiString("?");
+		UnsignedInt broadcastAddr = m_broadcastAddr;
+		const char *broadcastNote = "";
+#ifndef _WIN32
+		// The same lookup sendMessage uses for discovery broadcasts.
+		UnsignedInt subnetBroadcasts[8];
+		if (GatherSubnetBroadcastAddrs(m_localIP, subnetBroadcasts, ARRAY_SIZE(subnetBroadcasts)) > 0)
+		{
+			broadcastAddr = subnetBroadcasts[0];
+		}
+		else
+		{
+			broadcastNote = " (no subnet broadcast found for this address)";
+		}
+#endif
+		fprintf(stderr, "INFO: [LAN] lobby on UDP port %d: local IP %d.%d.%d.%d, interface %s, broadcast %d.%d.%d.%d%s, socket %s\n",
+			lobbyPort, PRINTF_IP_AS_4_INTS(m_localIP), interfaceName.str(), PRINTF_IP_AS_4_INTS(broadcastAddr),
+			broadcastNote, retval ? "ok" : "FAILED");
+	}
 
 	return retval;
 }

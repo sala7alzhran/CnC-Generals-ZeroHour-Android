@@ -27,6 +27,12 @@ public class ZerohourActivity extends SDLActivity
     // without this the two phones cannot see each other's hosted LAN games.
     private WifiManager.MulticastLock mMulticastLock;
 
+    // @port Android: Wi-Fi power saving parks the radio between beacons and batches incoming
+    // packets, which adds 100+ ms spikes to the lockstep LAN game. A low-latency Wi-Fi lock (API 29+,
+    // effective only while we are in the foreground with the screen on) or, on Android 9, a
+    // high-performance one keeps the radio awake while the game is resumed. Needs WAKE_LOCK.
+    private WifiManager.WifiLock mWifiLock;
+
     // @port Android: the game must own the whole screen. SDLActivity hides the system bars with
     // the legacy View.SYSTEM_UI_FLAG_* flags and re-hides them from a
     // setOnSystemUiVisibilityChangeListener callback; both are deprecated since API 30 and on
@@ -97,6 +103,39 @@ public class ZerohourActivity extends SDLActivity
         } catch (Exception e) {
             // Non-fatal: LAN discovery may be less reliable without the lock.
         }
+        try {
+            WifiManager wifi = (WifiManager) getApplicationContext()
+                    .getSystemService(Context.WIFI_SERVICE);
+            if (wifi != null) {
+                mWifiLock = createLowLatencyWifiLock(wifi);
+                mWifiLock.setReferenceCounted(false);   // acquire/release pair up with resume/pause
+            }
+        } catch (Exception e) {
+            // Non-fatal: LAN play only gets the default Wi-Fi power saving.
+        }
+    }
+
+    @SuppressWarnings("deprecation")   // WIFI_MODE_FULL_HIGH_PERF is the Android 9 fallback only
+    private static WifiManager.WifiLock createLowLatencyWifiLock(WifiManager wifi) {
+        int mode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                ? WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                : WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+        return wifi.createWifiLock(mode, "generalsx-lan-latency");
+    }
+
+    private void setWifiLockHeld(boolean held) {
+        try {
+            if (mWifiLock == null) {
+                return;
+            }
+            if (held && !mWifiLock.isHeld()) {
+                mWifiLock.acquire();
+            } else if (!held && mWifiLock.isHeld()) {
+                mWifiLock.release();
+            }
+        } catch (Exception e) {
+            // Never let the Wi-Fi lock disturb the game.
+        }
     }
 
     // @port Android: the engine creates a resizable SDL window and sets no
@@ -114,6 +153,13 @@ public class ZerohourActivity extends SDLActivity
     protected void onResume() {
         super.onResume();
         applyImmersiveMode();
+        setWifiLockHeld(true);
+    }
+
+    @Override
+    protected void onPause() {
+        setWifiLockHeld(false);
+        super.onPause();
     }
 
     @Override
@@ -203,6 +249,7 @@ public class ZerohourActivity extends SDLActivity
         } catch (Exception e) {
             // ignore
         }
+        setWifiLockHeld(false);
         super.onDestroy();
     }
 }

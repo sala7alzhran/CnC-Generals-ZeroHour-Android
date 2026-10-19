@@ -419,26 +419,23 @@ void LanLobbyMenuInit( WindowLayout *layout, void *userData )
 	// Choose an IP address, then initialize the LAN singleton
 	OptionPreferences optionPrefs;
 	UnsignedInt preferredLANIP = optionPrefs.getLANIPAddress();
-	UnsignedInt IP = preferredLANIP ? preferredLANIP : TheGlobalData->m_defaultIP;
+	UnsignedInt savedIP = preferredLANIP ? preferredLANIP : TheGlobalData->m_defaultIP;
 	IPEnumeration IPs;
 	EnumeratedIP *IPlist = IPs.getAddresses();
 	const WideChar* IPSource;
-	Bool foundPreferredIP = FALSE;
 
 	for (EnumeratedIP *candidate = IPlist; candidate != nullptr; candidate = candidate->getNext())
 	{
-		fprintf(stderr, "[LAN86] LanLobbyMenuInit enumerated candidate %d.%d.%d.%d\n",
-			PRINTF_IP_AS_4_INTS(candidate->getIP()));
-		if (candidate->getIP() == IP)
-		{
-			foundPreferredIP = TRUE;
-			break;
-		}
+		fprintf(stderr, "[LAN86] LanLobbyMenuInit enumerated candidate %d.%d.%d.%d (%s)\n",
+			PRINTF_IP_AS_4_INTS(candidate->getIP()), candidate->getInterfaceName().isEmpty() ? "?" : candidate->getInterfaceName().str());
 	}
-	/* 	fprintf(stderr, "[LAN86] LanLobbyMenuInit preferredLANIP=%d.%d.%d.%d globalDefaultIP=%d.%d.%d.%d foundPreferred=%d\n",
-		PRINTF_IP_AS_4_INTS(preferredLANIP), PRINTF_IP_AS_4_INTS(TheGlobalData->m_defaultIP), foundPreferredIP); */
 
-	if (IP != 0 && foundPreferredIP)
+	// GeneralsX @bugfix Android 19/10/2026 Keep the saved LAN IP while it exists, unless it is on a cellular or
+	// virtual interface while a Wi-Fi/hotspot, VPN or Ethernet one is available (a phone's Options.ini
+	// usually holds the 10.x cellular address that happened to be listed first). Otherwise use the first
+	// address, which IPEnumeration now lists in order of preference. 0 means there is no address at all.
+	UnsignedInt IP = IPs.getPreferredIP(savedIP);
+	if (IP != 0 && IP == savedIP)
 	{
 		IPSource = (preferredLANIP == IP) ? L"Options LAN IP" : L"Global default LAN IP";
 		// GeneralsX @build GitHubCopilot 12/04/2026 Make LAN lobby explicitly honor configured LAN IP preference when it is still valid.
@@ -447,31 +444,10 @@ void LanLobbyMenuInit( WindowLayout *layout, void *userData )
 	}
 	else
 	{
-		/*
-		while (IPlist && IPlist->getNext())
-		{
-			IPlist = IPlist->getNext();
-		}
-		*/
-		DEBUG_ASSERTCRASH(IPlist, ("No IP addresses found!"));
-		if (!IPlist)
-		{
-			/// @todo: display error and exit lan lobby if no IPs are found
-		}
-
 		IPSource = L"Enumerated LAN IP fallback";
-		IP = IPlist->getIP();
 		// GeneralsX @build GitHubCopilot 11/04/2026 Log auto-selected LAN IP to diagnose cross-platform discovery failures.
-		DEBUG_LOG(("LanLobbyMenuInit - auto-selected LAN IP %d.%d.%d.%d from enumeration",
-			PRINTF_IP_AS_4_INTS(IP)));
-		/* 		fprintf(stderr, "[LAN86] LanLobbyMenuInit fallback IP %d.%d.%d.%d preferred=%d.%d.%d.%d found=%d\n",
-			PRINTF_IP_AS_4_INTS(IP), PRINTF_IP_AS_4_INTS(preferredLANIP), foundPreferredIP); */
-	}
-
-	if (foundPreferredIP)
-	{
-		/* 		fprintf(stderr, "[LAN86] LanLobbyMenuInit preferred IP source=%ls ip=%d.%d.%d.%d\n",
-			IPSource, PRINTF_IP_AS_4_INTS(IP)); */
+		DEBUG_LOG(("LanLobbyMenuInit - auto-selected LAN IP %d.%d.%d.%d from enumeration (saved %d.%d.%d.%d)",
+			PRINTF_IP_AS_4_INTS(IP), PRINTF_IP_AS_4_INTS(savedIP)));
 	}
 #if defined(RTS_DEBUG)
 	UnicodeString str;
@@ -481,21 +457,31 @@ void LanLobbyMenuInit( WindowLayout *layout, void *userData )
 
 	// TheLAN->init() sets us to be in a LAN menu screen automatically.
 	TheLAN->init();
-	// GeneralsX @build GitHubCopilot 11/04/2026 Log LAN bind attempt from lobby startup path.
-	DEBUG_LOG(("LanLobbyMenuInit - calling SetLocalIP(%d.%d.%d.%d)", PRINTF_IP_AS_4_INTS(IP)));
-	fprintf(stderr, "[LAN86] LanLobbyMenuInit SetLocalIP begin %d.%d.%d.%d\n", PRINTF_IP_AS_4_INTS(IP));
-	if (TheLAN->SetLocalIP(IP) == FALSE) {
+	if (IP == 0)
+	{
+		// GeneralsX @bugfix Android 19/10/2026 No local address at all: report the normal network error
+		// (LanLobbyMenuUpdate shows it and backs out) instead of dereferencing an empty address list.
 		LANSocketErrorDetected = TRUE;
-		fprintf(stderr, "[LAN86] LanLobbyMenuInit SetLocalIP FAILED %d.%d.%d.%d\n", PRINTF_IP_AS_4_INTS(IP));
-		// GeneralsX @build GitHubCopilot 11/04/2026 Explicit failure breadcrumb for LAN socket initialization.
-		DEBUG_LOG(("LanLobbyMenuInit - SetLocalIP failed for %d.%d.%d.%d", PRINTF_IP_AS_4_INTS(IP)));
-		/* 		fprintf(stderr, "[LAN86] LanLobbyMenuInit SetLocalIP failed %d.%d.%d.%d\n", PRINTF_IP_AS_4_INTS(IP)); */
+		fprintf(stderr, "INFO: [LAN] no local IPv4 address found, leaving the LAN lobby\n");
+		DEBUG_LOG(("LanLobbyMenuInit - no IP addresses found"));
 	}
 	else
 	{
-		// GeneralsX @build GitHubCopilot 11/04/2026 Explicit success breadcrumb for LAN socket initialization.
-		DEBUG_LOG(("LanLobbyMenuInit - SetLocalIP succeeded for %d.%d.%d.%d", PRINTF_IP_AS_4_INTS(IP)));
-		/* 		fprintf(stderr, "[LAN86] LanLobbyMenuInit SetLocalIP ok %d.%d.%d.%d\n", PRINTF_IP_AS_4_INTS(IP)); */
+		// GeneralsX @build GitHubCopilot 11/04/2026 Log LAN bind attempt from lobby startup path.
+		DEBUG_LOG(("LanLobbyMenuInit - calling SetLocalIP(%d.%d.%d.%d)", PRINTF_IP_AS_4_INTS(IP)));
+		fprintf(stderr, "[LAN86] LanLobbyMenuInit SetLocalIP begin %d.%d.%d.%d (saved %d.%d.%d.%d)\n",
+			PRINTF_IP_AS_4_INTS(IP), PRINTF_IP_AS_4_INTS(savedIP));
+		if (TheLAN->SetLocalIP(IP) == FALSE) {
+			LANSocketErrorDetected = TRUE;
+			fprintf(stderr, "[LAN86] LanLobbyMenuInit SetLocalIP FAILED %d.%d.%d.%d\n", PRINTF_IP_AS_4_INTS(IP));
+			// GeneralsX @build GitHubCopilot 11/04/2026 Explicit failure breadcrumb for LAN socket initialization.
+			DEBUG_LOG(("LanLobbyMenuInit - SetLocalIP failed for %d.%d.%d.%d", PRINTF_IP_AS_4_INTS(IP)));
+		}
+		else
+		{
+			// GeneralsX @build GitHubCopilot 11/04/2026 Explicit success breadcrumb for LAN socket initialization.
+			DEBUG_LOG(("LanLobbyMenuInit - SetLocalIP succeeded for %d.%d.%d.%d", PRINTF_IP_AS_4_INTS(IP)));
+		}
 	}
 
 	//Initialize the gadgets on the window

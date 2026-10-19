@@ -62,6 +62,10 @@
     <!-- Needed to hold a WifiManager.MulticastLock so the device receives
          broadcast/multicast LAN-discovery packets over WiFi. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- WifiManager.WifiLock.acquire() requires WAKE_LOCK. ZerohourActivity holds a low-latency
+         Wi-Fi lock while the game is in the foreground, so power saving does not add lag spikes
+         to LAN games. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Create a Java class extending SDLActivity and place it in a
          directory under app/src/main/java matching the package, e.g. app/src/main/java/com/gamemaker/game/MyGame.java

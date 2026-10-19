@@ -30,14 +30,13 @@ zones (design: [MOBILE-UX-SPEC.md §6](MOBILE-UX-SPEC.md), implementation:
 
 | Where | What |
 |---|---|
-| **Top-left ☰** | Pause / in-game menu (ESC). |
-| **Top strip** | Money, the power bar, the **★ generals star** (opens the promotion screen; it flashes when you have points to spend), and your **general's powers** as a row of tiles once you have any — each shows its recharge clock. In multiplayer: chat and beacon buttons. |
-| **Top-right** | The **minimap**. Tap it to jump the camera there; with units selected, tap to send them (attack-move if that mode is on). It glows when your base is under attack. |
-| **Left column** | **1 2 3 4** control groups: tap = select the group, tap again quickly = also centre the camera on it, **hold ≈ ⅓ s** (short vibration) = assign the current selection to that group. Empty groups are dimmed. **ALL** = select every unit. **IDLE** = select the next idle worker/dozer (dimmed when nobody is idle). |
-| **Right drawer** | Appears only while something you selected has commands, and grows upward from the corner with the number of commands. Big tiles: build (dozer), train and upgrade (factory), abilities, sell, repair, rally point, stop/evacuate for garrisons. The first commands are in the bottom row, under your thumb. Above the tiles: the unit portrait with its upgrade/veterancy icons, or the **production queue** while something is being built (tap an item to cancel it; the first shows its progress). |
+| **Top strip** | Left to right: **☰** pause / in-game menu (ESC); your **money**; the **power meter** (empty trough until something produces power); the **★ generals star** (opens the promotion screen; it flashes when you have points to spend); your **general's powers** as a row of tiles once you have any — each shows its recharge clock. In multiplayer only: chat and beacon buttons before the minimap. |
+| **Top-right** | The **minimap**, only once you have a radar (command centre, radar van…). Tap it to jump the camera there; with units selected, tap to send them (attack-move if that mode is on). It glows when your base is under attack. |
+| **Left column** | Only what has content, stacked from the top: each **control group that holds units** (its number, and how many units in the small badge): tap = select, tap again quickly = also centre the camera, **hold ≈ ⅓ s** (short vibration) = replace it with the current selection. While something is selected, a **"+" slot** offers the first free group: hold it to assign (a tap does nothing). **ALL** = select every unit. **IDLE** appears only while a worker/dozer is idle: select the next one. |
+| **Right drawer** | Slides in from the right edge while something you selected has commands, and is exactly as tall as those commands need: 3 columns of tiles, the first command bottom-left under your thumb, no gaps. Build (dozer), train and upgrade (factory), abilities, sell, repair, rally point, stop/evacuate for garrisons. Each build tile shows its **price** (red when you cannot pay it yet); a **padlock** marks what you cannot build yet (it stays in colour, just darker). The **name** of the tile you touched appears beside the drawer. Above the tiles: the **portrait** with its upgrade/veterancy icons, and — only while something is being built — the **production queue** beside it (tap an item to cancel; the first shows its progress). |
 
-Taps on the drawer's empty parts do nothing (they never hit a unit behind it); taps anywhere
-else on the battlefield work as in the gesture table above.
+Taps on the strip or the drawer that miss a control do nothing (they never hit a unit behind
+them); taps anywhere else on the battlefield work as in the gesture table above.
 
 ## Menus, HUD and building placement
 

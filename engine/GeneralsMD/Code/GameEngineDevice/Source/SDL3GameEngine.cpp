@@ -67,7 +67,8 @@
 #include "GameClient/Display.h"
 #include "GameClient/VideoPlayer.h"
 #include <jni.h>   // density + haptics come from ZerohourActivity via SDL_GetAndroidJNIEnv()
-#include "GameClient/AndroidHud.h"   // phone HUD overlay buttons (menu, control groups): geometry shared with the draw side
+#include "GameClient/AndroidHud.h"   // phone HUD geometry, shared with the layout and the draw side
+#include "GameClient/ControlBar.h"   // phone HUD state: which overlay buttons exist, the drawer's footprint
 #include "Common/MessageStream.h"    // meta commands the overlay buttons send
 #endif
 
@@ -228,11 +229,13 @@ Uint64       g_twoStartMs = 0;
 // until ALL fingers lift (stops a stray drag-box when one finger lifts first)
 bool         g_suppressLeft = false;
 
-// HUD overlay buttons (☰ menu, control groups 1-4, ALL, IDLE): drawn by W3DInGameUI.cpp from
-// the AndroidHud geometry and hit-tested here from the same geometry. One finger arms one button;
-// it fires on release over the button, and a group button fires its long-press action (assign
-// the selection) after LONG_PRESS_NS instead.
+// HUD overlay buttons (☰ menu, control groups 1-4, the "+" assign slot, ALL, IDLE): drawn by
+// W3DInGameUI.cpp and hit-tested here from the same ControlBar::phoneOverlays() state. One finger
+// arms one button; it fires on release over the button, and a group button fires its long-press
+// action (assign the selection) after LONG_PRESS_NS instead. A "+" slot (an empty group offered
+// while something is selected) only has the long-press action.
 Int          g_overlayArmed = -1;     // AndroidHud::OverlayId under the first finger, -1 if none
+bool         g_overlayGhost = false;  // the armed button is a "+" slot
 SDL_FingerID g_overlayFingerId = 0;
 Uint64       g_overlayDownNs = 0;
 bool         g_overlayLongFired = false;
@@ -479,13 +482,19 @@ void toEngine(float px, float py, ICoord2D &out) {
 }
 
 // ---------------------------------------------------- HUD overlay buttons --
-Int overlayHit(float px, float py) {
-	if (!TheDisplay) return -1;
+// The buttons that exist right now come from ControlBar::phoneOverlays(), the same call the draw
+// side uses, so a button is tappable exactly where and when it is drawn.
+Int overlayHit(float px, float py, bool *ghost = nullptr) {
+	if (!TheDisplay || !TheControlBar) return -1;
 	ICoord2D s; toEngine(px, py, s);
-	const Int w = (Int)TheDisplay->getWidth(), h = (Int)TheDisplay->getHeight();
-	const AndroidHud::Metrics m = AndroidHud::computeMetrics(w, h, AndroidHud::pixelsPerMmFor(w, h));
-	for (Int i = 0; i < AndroidHud::OVERLAY_COUNT; ++i)
-		if (m.overlay[i].contains(s.x, s.y)) return i;
+	AndroidHud::OverlayState ov[AndroidHud::OVERLAY_COUNT];
+	TheControlBar->phoneOverlays(ov);
+	for (Int i = 0; i < AndroidHud::OVERLAY_COUNT; ++i) {
+		if (ov[i].visible && ov[i].rect.contains(s.x, s.y)) {
+			if (ghost) *ghost = ov[i].ghost != FALSE;
+			return i;
+		}
+	}
 	return -1;
 }
 inline bool overlayIsGroup(Int id) {
@@ -496,14 +505,16 @@ inline bool overlayIsGroup(Int id) {
 inline void appendMeta(GameMessage::Type type) {
 	if (TheMessageStream) TheMessageStream->appendMessage(type);
 }
-// Tap: the button's main action.
-void overlayFire(Int id) {
+// Tap: the button's main action. `ghost`: the button was a "+" slot when it was pressed.
+void overlayFire(Int id, bool ghost) {
 	switch (id) {
 	case AndroidHud::OVERLAY_MENU:        ToggleQuitMenu(); break;
 	case AndroidHud::OVERLAY_SELECT_ALL:  appendMeta(GameMessage::MSG_META_SELECT_ALL); break;
 	case AndroidHud::OVERLAY_IDLE_WORKER: appendMeta(GameMessage::MSG_META_SELECT_NEXT_IDLE_WORKER); break;
 	default:
-		if (overlayIsGroup(id))   // select the group; the engine also centres the camera on a quick second tap
+		// select the group; the engine also centres the camera on a quick second tap. A "+" slot
+		// is empty: a tap on it does nothing (selecting an empty group would deselect everything).
+		if (overlayIsGroup(id) && !ghost)
 			appendMeta((GameMessage::Type)(GameMessage::MSG_META_SELECT_TEAM0 + (id - AndroidHud::OVERLAY_GROUP_1)));
 		break;
 	}
@@ -516,6 +527,7 @@ void overlayLongPress(Int id) {
 }
 inline void endOverlay() {
 	g_overlayArmed = -1;
+	g_overlayGhost = false;
 	g_overlayLongFired = false;
 	TheAndroidOverlayPressed = -1;
 }
@@ -736,21 +748,37 @@ void pinchZoomFrame(float dt, float cx, float cy, float pinchDist) {
 }
 
 // ------------------------------------------------------- gesture logic --
+// An opaque window (or an opaque ancestor of the window) under the point owns the touch. Same
+// rule as W3DView::pickDrawable.
+bool windowOwnsPoint(float px, float py) {
+	if (!TheWindowManager) return false;
+	ICoord2D s; toEngine(px, py, s);
+	GameWindow *window = TheWindowManager->getWindowUnderCursor(s.x, s.y);
+	while (window) {
+		if (!BitIsSet(window->winGetStatus(), WIN_STATUS_SEE_THRU)) return true;
+		window = window->winGetParent();
+	}
+	return false;
+}
+
+// The HUD's own surfaces: the top strip band and the open drawer. A finger that lands on them but
+// on no window (the gaps between tiles, the band's empty stretch) must not reach the battlefield
+// either. Windows found there are handled as windows (a tile, the minimap).
+bool hudDeadZoneAt(float px, float py) {
+	if (!TheControlBar || !TheControlBar->phoneHudVisible() || !inLiveGame()) return false;
+	if (windowOwnsPoint(px, py)) return false;
+	ICoord2D s; toEngine(px, py, s);
+	if (TheControlBar->phoneMetrics().stripBand.contains(s.x, s.y)) return true;
+	AndroidHud::Rect drawer;
+	return TheControlBar->getPhoneDrawerRect(drawer) && drawer.contains(s.x, s.y);
+}
+
 // Camera mode: a finger that comes down on the battlefield itself (not on a HUD window, not
 // while placing a building, not in a cutscene or the pause menu) drives the camera.
 bool cameraModeAt(float px, float py) {
 	if (!inLiveGame() || videoPlaying()) return false;
 	if (TheInGameUI && (TheInGameUI->isQuitMenuVisible() || TheInGameUI->getPendingPlaceType() != nullptr)) return false;
-	if (TheWindowManager) {
-		ICoord2D s; toEngine(px, py, s);
-		GameWindow *window = TheWindowManager->getWindowUnderCursor(s.x, s.y);
-		// Same rule as W3DView::pickDrawable: an opaque window (or opaque parent) owns the touch.
-		while (window) {
-			if (!BitIsSet(window->winGetStatus(), WIN_STATUS_SEE_THRU)) return false;
-			window = window->winGetParent();
-		}
-	}
-	return true;
+	return !windowOwnsPoint(px, py);
 }
 
 // Keep synthesized drag coordinates off the engine's own 3 px screen-edge scroll band.
@@ -806,7 +834,8 @@ void handleFingerDown(const SDL_TouchFingerEvent &tf) {
 		g_tfCount++;
 	}
 	if (g_tfCount == 1) {
-		const Int overlay = (firstFinger && overlaysActive()) ? overlayHit(px, py) : -1;
+		bool ghost = false;
+		const Int overlay = (firstFinger && overlaysActive()) ? overlayHit(px, py, &ghost) : -1;
 		if (firstFinger && videoPlaying() && onSkipButton(px, py)) {
 			// press landed on the SKIP button during a cutscene — arm it, no select
 			g_skipArmed = true; g_skipFingerId = tf.fingerID;
@@ -814,9 +843,13 @@ void handleFingerDown(const SDL_TouchFingerEvent &tf) {
 			g_pm = PM_NONE;
 		} else if (overlay >= 0) {
 			// press landed on a HUD overlay button — arm it, don't start a select/drag
-			g_overlayArmed = overlay; g_overlayFingerId = tf.fingerID;
+			g_overlayArmed = overlay; g_overlayGhost = ghost; g_overlayFingerId = tf.fingerID;
 			g_overlayDownNs = now; g_overlayLongFired = false;
 			TheAndroidOverlayPressed = overlay;
+			g_leftPending = false; g_leftHeld = false;
+			g_pm = PM_NONE;
+		} else if (hudDeadZoneAt(px, py)) {
+			// press landed on the HUD's strip or drawer but on no control: swallow it
 			g_leftPending = false; g_leftHeld = false;
 			g_pm = PM_NONE;
 		} else if (cameraModeAt(px, py)) {
@@ -939,11 +972,12 @@ void handleFingerUp(const SDL_TouchFingerEvent &tf) {
 	// HUD overlay button: fire only if the finger lifts while still over it and no long-press fired
 	if (g_overlayArmed >= 0 && tf.fingerID == g_overlayFingerId) {
 		const Int id = g_overlayArmed;
+		const bool ghost = g_overlayGhost;
 		const bool fire = !g_overlayLongFired && overlaysActive() && overlayHit(px, py) == id;
 		endOverlay();
 		dropFinger(idx);
 		if (g_tfCount == 0) { g_suppressLeft = false; g_leftPending = false; g_leftHeld = false; endPrimary(); }
-		if (fire) overlayFire(id);
+		if (fire) overlayFire(id, ghost);
 		return;
 	}
 

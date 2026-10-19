@@ -382,6 +382,11 @@ void W3DGadgetPushButtonImageDrawOne( GameWindow *window,
 				{
 					//The button is disabled -- but if the button isn't "ready", we don't want to do this because
 					//we want to show the button in color with just the clock overlay.
+#if defined(__ANDROID__)
+					// GeneralsX @feature Android smart HUD 19/10/2026 Phone tiles stay in colour: a locked
+					// command is dimmed (the HUD adds a lock badge), an unaffordable one only slightly.
+					colorMultiplier = BitIsSet( window->winGetStatus(), WIN_STATUS_ALWAYS_COLOR ) ? 0xffb4b4b4 : 0xff5c5c5c;
+#else
 					if( !BitIsSet( window->winGetStatus(), WIN_STATUS_ALWAYS_COLOR ) )
 					{
 						drawMode=Display::DRAW_IMAGE_GRAYSCALE;
@@ -390,6 +395,7 @@ void W3DGadgetPushButtonImageDrawOne( GameWindow *window,
 					{
 						colorMultiplier = 0xff909090; //RGB values are 144/255 (90) -- Alpha is opaque (ff) --> ff909090;
 					}
+#endif
 				}
 			}
 		}

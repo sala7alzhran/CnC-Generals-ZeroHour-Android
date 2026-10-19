@@ -890,7 +890,14 @@ ControlBar::ControlBar()
 	m_isObserverCommandBar = FALSE;
 #if defined(__ANDROID__)
 	m_phoneLayoutDirty = TRUE;
-	m_phoneVisibleRows = -1;
+	m_phoneMetrics = AndroidHud::computeMetrics( 1, 1, 15.0f, FALSE );
+	m_phoneDrawerSignature = 0;
+	m_phoneDrawerShown = FALSE;
+	m_phoneDrawerSlideDx = 0;
+	m_phoneSlideStartMs = 0;
+	m_phoneDrawerRect = AndroidHud::Rect{ 0, 0, 0, 0 };
+	for( Int c = 0; c < AndroidHud::GRID_CELLS; ++c )
+		m_phoneCellWindow[ c ] = nullptr;
 	m_phoneIdleWorkerButton = nullptr;
 #endif
 	m_observerLookAtPlayer = nullptr;

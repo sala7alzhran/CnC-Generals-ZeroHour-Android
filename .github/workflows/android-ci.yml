@@ -173,6 +173,10 @@ jobs:
         run: scripts/ci/build-android.sh stage
 
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          # The repo's wrapper was validated above, before build/ existed. Validating again here
+          # would also scan the sample android-project inside SDL3's fetched sources and fail.
+          validate-wrappers: false
 
       - name: Assemble debug APK + run unit tests
         working-directory: android

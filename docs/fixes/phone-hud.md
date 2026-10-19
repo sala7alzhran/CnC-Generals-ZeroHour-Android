@@ -71,7 +71,8 @@ overlay drawing, touch hit-testing). Everything is in millimetres from the real 
   `ExpBarForeground`), places the strip (money text inset in its pill with a 3.0 mm font, power
   meter, star, chat and beacon in multiplayer only, radar and glow at the minimap rectangle), and
   lays the powers bar out as one row of tiles.
-- **Drawer pass** `ControlBar::updatePhoneDrawer()` runs every frame and packs the engine's
+- **Drawer pass** `ControlBar::updatePhoneDrawer()` runs every frame from the top of
+  `ControlBar::update()` (which returns early while nothing is selected) and packs the engine's
   visibility flags into one signature (18 command bits, portrait, cameo count, queue-has-items, the
   three small panels, radar, glow, hidden). On change — or while the drawer slides — it calls
   `layoutPhoneDrawer(dx)`: visible commands are packed into cells 0..n−1 (bottom-left first), the
@@ -100,6 +101,25 @@ overlay drawing, touch hit-testing). Everything is in millimetres from the real 
 Nothing allocates per frame or per event: `DisplayString`s for labels, badges, cost pills and the
 name are created once (released in `W3DInGameUI::reset()`) and re-set only when their value
 changes; the per-frame work is a few dozen flag reads.
+
+## Building placement from a tap
+
+The PC's flow (`PlaceEventTranslator.cpp`): the raw mouse-down anchors the pending structure
+(`InGameUI::setPlacementStart`), the mouse-up makes the meta-event translator insert a
+`MSG_MOUSE_LEFT_CLICK`, and that click places it. Both raw messages pass the window translator
+first, which destroys any message a window used. On the phone the second device test showed the
+ghost moving to the tapped spot but never being placed. Rather than depend on what the window layer
+makes of a synthesized press, a tap while a structure is pending now calls `AndroidPlacementTap()`
+(Android-only, in `PlaceEventTranslator.cpp`), which does the two steps directly with the same
+checks (`canMakeUnit`, `isLocationLegalToBuild` with the PC's flags, the special-power construction
+case) and sends the same `MSG_DOZER_CONSTRUCT` / `_LINE` order, so multiplayer stays deterministic.
+The touch layer first synthesizes a motion to the spot, so the engine's ghost (and its red tint
+when the spot is illegal) stays where the finger was. While placing, the camera gestures stay live
+(the pending placement no longer forces classic mode), a long press is not a box-select, and a
+two-finger tap is the right click that cancels. The PC's popup description window is not shown on
+Android: it is laid out for the 4:3 bar and anchors to markers the phone layout parks; the touched
+tile's name beside the drawer replaces it. Each placement step writes one `ANDROID placement:` line
+to the log for the next device test.
 
 ## Overlay buttons
 

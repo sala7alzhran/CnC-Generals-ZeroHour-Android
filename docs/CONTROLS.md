@@ -38,6 +38,11 @@ zones (design: [MOBILE-UX-SPEC.md §6](MOBILE-UX-SPEC.md), implementation:
 Taps on the strip or the drawer that miss a control do nothing (they never hit a unit behind
 them); taps anywhere else on the battlefield work as in the gesture table above.
 
+**Placing a building:** tap a structure tile, then **tap the ground** where it should go. The
+translucent ghost moves to the finger and the dozer is sent; if the spot is not allowed you hear
+the dozer's "cannot build" line and the ghost turns red — tap elsewhere. While the ghost is up you
+can still drag to pan and pinch to zoom; a **two-finger tap** cancels the placement.
+
 ## Menus, HUD and building placement
 
 **Smart touch.** The PC menus have small rows and arrows. In every menu (and in the pause menu),

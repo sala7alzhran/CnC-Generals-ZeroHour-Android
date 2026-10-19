@@ -1418,6 +1418,15 @@ void ControlBar::update()
 		return;
 	getStarImage();
 	updateRadarAttackGlow();
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android smart HUD: lay the bar's windows out for the phone once anything
+	// moved them, then let the command drawer follow what the engine shows. At the top of update()
+	// because the function returns early while nothing is selected, and the drawer must still close.
+	if( m_phoneLayoutDirty )
+		applyPhoneLayout();
+	else
+		updatePhoneDrawer();
+#endif
 	if(m_controlBarSchemeManager)
 		m_controlBarSchemeManager->update();
 
@@ -1639,14 +1648,6 @@ void ControlBar::update()
 
 	}
 
-#if defined(__ANDROID__)
-	// GeneralsX @feature Android smart HUD: lay the bar's windows out for the phone once anything
-	// moved them, then let the command drawer follow this frame's populated rows.
-	if( m_phoneLayoutDirty )
-		applyPhoneLayout();
-	else
-		updatePhoneDrawer();
-#endif
 }
 
 //-------------------------------------------------------------------------------------------------

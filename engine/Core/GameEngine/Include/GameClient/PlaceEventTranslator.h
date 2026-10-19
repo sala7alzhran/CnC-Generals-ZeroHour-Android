@@ -40,10 +40,3 @@ public:
 	virtual ~PlaceEventTranslator() override;
 	virtual GameMessageDisposition translateGameMessage(const GameMessage *msg) override;
 };
-
-#if defined(__ANDROID__)
-/// GeneralsX @feature Android touch placement 19/10/2026 A finger tap while a structure is pending:
-/// anchor it at the tapped screen point and place it, the two steps the PC does on mouse-down and
-/// on the click message. The touch layer calls it directly. TRUE when a construct order was sent.
-Bool AndroidPlacementTap( const ICoord2D &screen );
-#endif

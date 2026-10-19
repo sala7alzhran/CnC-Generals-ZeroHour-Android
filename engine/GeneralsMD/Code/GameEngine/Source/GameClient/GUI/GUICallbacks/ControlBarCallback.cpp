@@ -497,11 +497,6 @@ void ShowControlBar( Bool immediate )
 {
 	if (!TheWindowManager || !TheControlBar)
 		return;
-#if defined(__ANDROID__)
-	// GeneralsX @feature Android smart HUD: the slide animation captures the bar's position at
-	// registration and would fight the phone layout pass; the HUD just appears.
-	immediate = TRUE;
-#endif
 
 	showReplayControls();
 
@@ -537,9 +532,6 @@ void HideControlBar( Bool immediate )
 {
 	if (!TheWindowManager || !TheControlBar)
 		return;
-#if defined(__ANDROID__)
-	immediate = TRUE;   // see ShowControlBar
-#endif
 
 	hideReplayControls();
 

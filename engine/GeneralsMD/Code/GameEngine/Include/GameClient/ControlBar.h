@@ -35,10 +35,6 @@
 #include "Common/Overridable.h"
 #include "Common/Science.h"
 #include "GameClient/Color.h"
-#if defined(__ANDROID__)
-#include "GameClient/AndroidHud.h"		// phone HUD geometry (GeneralsX @feature Android smart HUD)
-class WinInstanceData;
-#endif
 
 // FORWARD REFERENCES /////////////////////////////////////////////////////////////////////////////
 class Drawable;
@@ -766,32 +762,6 @@ public:
 	void switchControlBarStage( ControlBarStages stage );
 	void toggleControlBarStage();
 
-#if defined(__ANDROID__)
-	// GeneralsX @feature Android smart HUD 19/10/2026 The bar's own windows are re-laid-out into a
-	// phone HUD (ControlBarPhoneLayout.cpp, docs/MOBILE-UX-SPEC.md §6). The pass runs from update()
-	// once dirty; the engine's own repositioning points mark it so. The draw side (W3DInGameUI.cpp)
-	// and the touch side (SDL3GameEngine.cpp) read the HUD's state only through these.
-	void markPhoneLayoutDirty() { m_phoneLayoutDirty = TRUE; }
-	void placePhoneWindow( GameWindow *win, Int screenX, Int screenY, Int width, Int height );
-	GameFont *getPhoneHudFont( Real heightMm );		///< the HUD's text font at a physical height
-	Bool phoneHudVisible() const;									///< the bar is on screen (not hidden by a script, not the observer bar)
-	const AndroidHud::Metrics &phoneMetrics() const { return m_phoneMetrics; }	///< the resolved layout
-	void phoneOverlays( AndroidHud::OverlayState *out ) const;	///< OVERLAY_COUNT entries: which overlay buttons exist this frame and where
-	Bool getPhoneDrawerRect( AndroidHud::Rect &out ) const;		///< the drawer's footprint while open (a dead zone for the touch layer)
-	GameWindow *getPhoneCommandWindow( Int cell ) const;			///< the command button laid out in grid cell `cell`, or nullptr
-	Int getPhoneCommandCell( const GameWindow *button ) const;	///< the grid cell a command button is laid out in, or -1
-	const CommandButton *getPhoneCommand( GameWindow *button ) const;	///< the command bound to a bar button, or nullptr
-	Int getPhoneCommandCost( const CommandButton *command ) const;			///< money the command costs the local player; 0 = none shown
-	Int phoneTab() const { return m_phoneTab; }					///< the drawer tab shown (meaningful while the menu has tabs)
-	void phoneSelectTab( Int tab );								///< a tap on a drawer tab: show it; the active tab again shows its next page
-	const WideChar *phoneTabLabel( Int tab ) const;			///< the tab's caption for the current menu kind
-	void phoneDrawBackdrop();											///< draws every HUD surface under the bar's windows; the root window's draw function
-	void phoneDrawTile( GameWindow *tile, WinInstanceData *inst );			///< draw function of a command tile
-	void phoneDrawPowerButton( GameWindow *button, WinInstanceData *inst );///< draw function of a generals' power shortcut
-	void phoneDrawRankBadge( GameWindow *button, WinInstanceData *inst );	///< draw function of the rank (promotion) button
-	void phoneReleaseText();											///< free the HUD's cached text objects (reset / shutdown)
-#endif
-
 	const Image *getStarImage();
 
 	Color getBorderColor(){return m_commandBarBorderColor;}
@@ -920,30 +890,6 @@ protected:
 	ControlBarStages m_currentControlBarStage;
 
 	Bool m_UIDirty;																///< the context UI must be re-evaluated
-
-#if defined(__ANDROID__)
-	void applyPhoneLayout();											///< full phone HUD layout pass (ControlBarPhoneLayout.cpp)
-	void updatePhoneDrawer();											///< per-frame: follow what the engine shows, slide the drawer in
-	void layoutPhoneDrawer( Int slideDx );				///< place the drawer's panels and tiles for the current content
-	Int  phoneCommandTab( const CommandButton *command, Bool builderMenu ) const;	///< which tab a command belongs to
-	Int  phoneShownPowerCount() const;						///< generals' power shortcuts the engine shows right now
-	Bool m_phoneLayoutDirty;											///< the phone layout must be re-applied
-	AndroidHud::Metrics m_phoneMetrics;						///< the layout the HUD was last applied with
-	UnsignedInt m_phoneDrawerSignature;						///< packed visibility state the drawer was last laid out for
-	UnsignedInt m_phonePowerSignature;						///< packed visibility of the generals' power shortcuts
-	Int  m_phoneRows;															///< tile rows the drawer currently uses (0..GRID_ROWS)
-	Bool m_phoneDrawerShown;											///< the drawer was open last frame
-	Int  m_phoneDrawerSlideDx;										///< slide-in offset the drawer was last laid out with
-	UnsignedInt m_phoneSlideStartMs;							///< when the drawer last started sliding in
-	AndroidHud::Rect m_phoneDrawerRect;						///< footprint of the open drawer (0 x 0 while closed)
-	GameWindow *m_phoneCellWindow[ AndroidHud::GRID_CELLS ];	///< command button in each grid cell, nullptr if empty
-	Int  m_phoneTab;															///< drawer tab shown
-	Int  m_phonePage;															///< page within the tab
-	Int  m_phoneTabCount[ AndroidHud::NUM_TABS ];	///< commands per tab in the current menu (0 = tab hidden)
-	Int  m_phonePages;														///< pages the active tab has
-	Bool m_phoneMenuHasTabs;											///< the current menu is split into tabs
-	Bool m_phoneBuilderMenu;											///< the current menu is a builder's (BASE / DEF / SUP captions)
-#endif
 
 	CommandButton *m_commandButtons;							///< list of possible commands to have
 	CommandSet *m_commandSets;										///< list of all command sets defined

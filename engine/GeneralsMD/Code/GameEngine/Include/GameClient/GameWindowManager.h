@@ -280,12 +280,6 @@ public:
 	virtual Int winSetModal( GameWindow *window );  ///< put at top of modal stack
 	virtual Int winUnsetModal( GameWindow *window );  /**< take window off modal stack, if window is
 																										not at top of stack and error will occur */
-#if defined(__ANDROID__)
-	/// GeneralsX @feature Android smart touch 19/10/2026 The window at the top of the modal stack
-	/// (nullptr if none): while it is up only its tree takes input, so the touch layer's nearest-control
-	/// search is limited to it.
-	GameWindow *winGetModalWindow() const { return m_modalHead ? m_modalHead->window : nullptr; }
-#endif
 
 	//---------------------------------------------------------------------------
 	/////////////////////////////////////////////////////////////////////////////

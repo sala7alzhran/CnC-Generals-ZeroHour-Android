@@ -584,12 +584,6 @@ public:  // ********************************************************************
 	void setDrawRMBScrollAnchor(Bool b) { m_drawRMBScrollAnchor = b; }
 	void setMoveRMBScrollAnchor(Bool b) { m_moveRMBScrollAnchor = b; }
 
-#if defined(__ANDROID__)
-	// GeneralsX @feature Android smart HUD 19/10/2026 The phone's IDLE button shows the idle worker's
-	// own picture and how many idle: the count for the viewed player and the template of the first.
-	Int androidIdleWorkers( const ThingTemplate **firstTemplate );
-#endif
-
 private:
 	virtual Int getIdleWorkerCount();
 	virtual Object *findIdleWorker( Object *obj);

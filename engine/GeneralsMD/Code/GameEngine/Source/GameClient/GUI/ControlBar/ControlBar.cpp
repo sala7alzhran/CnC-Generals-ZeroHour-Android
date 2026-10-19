@@ -888,26 +888,6 @@ ControlBar::ControlBar()
 	m_commandSets = nullptr;
 	m_controlBarSchemeManager = nullptr;
 	m_isObserverCommandBar = FALSE;
-#if defined(__ANDROID__)
-	m_phoneLayoutDirty = TRUE;
-	m_phoneMetrics = AndroidHud::computeMetrics( 1, 1, 15.0f, FALSE, 0 );
-	m_phoneDrawerSignature = 0;
-	m_phonePowerSignature = 0;
-	m_phoneRows = 0;
-	m_phoneDrawerShown = FALSE;
-	m_phoneDrawerSlideDx = 0;
-	m_phoneSlideStartMs = 0;
-	m_phoneDrawerRect = AndroidHud::Rect{ 0, 0, 0, 0 };
-	for( Int c = 0; c < AndroidHud::GRID_CELLS; ++c )
-		m_phoneCellWindow[ c ] = nullptr;
-	m_phoneTab = 0;
-	m_phonePage = 0;
-	for( Int t = 0; t < AndroidHud::NUM_TABS; ++t )
-		m_phoneTabCount[ t ] = 0;
-	m_phonePages = 1;
-	m_phoneMenuHasTabs = FALSE;
-	m_phoneBuilderMenu = FALSE;
-#endif
 	m_observerLookAtPlayer = nullptr;
 	m_observedPlayer = nullptr;
 	m_buildToolTipLayout = nullptr;
@@ -1009,9 +989,6 @@ ControlBar::ControlBar()
 //-------------------------------------------------------------------------------------------------
 ControlBar::~ControlBar()
 {
-#if defined(__ANDROID__)
-	phoneReleaseText();
-#endif
 
 	if(m_scienceLayout)
 	{
@@ -1335,9 +1312,6 @@ void ControlBar::init()
 //-------------------------------------------------------------------------------------------------
 void ControlBar::reset()
 {
-#if defined(__ANDROID__)
-	phoneReleaseText();   // GeneralsX @feature Android smart HUD: the HUD's text objects are per game
-#endif
 	hideSpecialPowerShortcut();
 	// do not destroy the rally drawable, it will get destroyed with everything else during a reset
 	m_rallyPointDrawableID = INVALID_DRAWABLE_ID;
@@ -1432,15 +1406,6 @@ void ControlBar::update()
 		return;
 	getStarImage();
 	updateRadarAttackGlow();
-#if defined(__ANDROID__)
-	// GeneralsX @feature Android smart HUD: lay the bar's windows out for the phone once anything
-	// moved them, then let the command drawer follow what the engine shows. At the top of update()
-	// because the function returns early while nothing is selected, and the drawer must still close.
-	if( m_phoneLayoutDirty )
-		applyPhoneLayout();
-	else
-		updatePhoneDrawer();
-#endif
 	if(m_controlBarSchemeManager)
 		m_controlBarSchemeManager->update();
 
@@ -1661,6 +1626,8 @@ void ControlBar::update()
 			break;
 
 	}
+
+
 
 }
 
@@ -3058,11 +3025,6 @@ void ControlBar::switchControlBarStage( ControlBarStages stage )
 {
 	if(stage < CONTROL_BAR_STAGE_DEFAULT || stage >= MAX_CONTROL_BAR_STAGES)
 		return;
-#if defined(__ANDROID__)
-	// GeneralsX @feature Android smart HUD: every stage change (and every faction scheme set, which
-	// ends here) moves the bar's windows back to their PC places; re-apply the phone layout after.
-	markPhoneLayoutDirty();
-#endif
 	switch (stage) {
 	case CONTROL_BAR_STAGE_DEFAULT:
 		setDefaultControlBarConfig();
@@ -3338,10 +3300,6 @@ void ControlBar::initSpecialPowershortcutBar( Player *player)
 		}
 	}
 
-#if defined(__ANDROID__)
-	// GeneralsX @feature Android smart HUD: a freshly created shortcut bar sits at its PC place.
-	markPhoneLayoutDirty();
-#endif
 }
 
 void ControlBar::populateSpecialPowerShortcut( Player *player)
@@ -3802,11 +3760,6 @@ void ControlBar::animateSpecialPowerShortcut( Bool isOn )
 {
 	if(!m_specialPowerShortcutParent || !m_animateWindowManagerForGenShortcuts || !m_currentlyUsedSpecialPowersButtons)
 		return;
-#if defined(__ANDROID__)
-	// GeneralsX @feature Android smart HUD: the slide-in animation would carry the powers row back
-	// to the position it had when registered; on a phone the row simply appears in the top strip.
-	return;
-#endif
 	Bool dontAnimate = TRUE;
 	for( Int i = 0; i < m_currentlyUsedSpecialPowersButtons; ++i )
 	{
@@ -3867,13 +3820,7 @@ void ControlBar::setFullViewportHeight()
 
 void ControlBar::setScaledViewportHeight()
 {
-#if defined(__ANDROID__)
-	// GeneralsX @feature Android smart HUD: the bar no longer owns the bottom of the screen on a
-	// phone; its controls float over a full-height battlefield (docs/MOBILE-UX-SPEC.md §6).
-	TheTacticalView->setHeight(TheDisplay->getHeight());
-#else
 	TheTacticalView->setHeight(TheDisplay->getHeight() * TheGlobalData->m_viewportHeightScale);
-#endif
 }
 
 // GeneralsX @bugfix w1semannn 07/06/2026 Fix tooltip height clipping with Unicode fonts (Issue #153)

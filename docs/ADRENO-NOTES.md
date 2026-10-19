@@ -7,6 +7,10 @@ on-device run.
 
 ## 1. Fixes the docs describe that are *not* in this repository
 
+> **Update 2026-10-20:** guarded versions of these fallbacks (except the DXVK-side BC decode,
+> which the engine's own CPU decode replaces) are now in `scripts/ci/dxvk-android.patch`. They stay
+> off on the Adreno 750. See [DEVICE-SUPPORT.md](DEVICE-SUPPORT.md#known-gpu-notes).
+
 These lived in the original author's private DXVK build. The CI APK uses fbraz3's GeneralsX DXVK
 2.6 fork plus `scripts/ci/dxvk-android.patch`, so none of them are in it.
 

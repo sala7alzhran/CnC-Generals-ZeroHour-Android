@@ -62,6 +62,18 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
 - **Fixed** true fullscreen at native 1640×720 (was 4:3 pillar‑boxed); Options→Resolution no
   longer crashes on the empty Win32 mode table.
 - Pipeline‑creation serialization as defense against compiler races.
+- **Added** the Mali fallbacks to the CI's DXVK build (`scripts/ci/dxvk-android.patch`). The stock
+  DXVK 2.6 required `VK_EXT_robustness2` and forced on `multiDrawIndirect`, `robustBufferAccess2`
+  and `nullDescriptor`, so it could not create a device on Mali. Each fallback only takes effect
+  when the feature is missing or on the ARM driver; on the Adreno 750 nothing changes:
+  - dummy descriptors without `nullDescriptor`;
+  - single draws without `multiDrawIndirect`;
+  - CPU DXT decode without BC textures;
+  - no clip planes without `shaderClipDistance`;
+  - `OpKill` and serialized pipeline creation on the ARM driver.
+
+  `dxvk.fakeMissingFeatures` / `dxvk.fakeArmDriver` in `dxvk.conf` fake a Mali on any phone
+  (see [docs/DEVICE-SUPPORT.md](docs/DEVICE-SUPPORT.md)).
 
 ## Minimap / radar
 - **Fixed** black radar texture on the 10‑bit swapchain: prefer 32‑bit `X8R8G8B8` over 24‑bit

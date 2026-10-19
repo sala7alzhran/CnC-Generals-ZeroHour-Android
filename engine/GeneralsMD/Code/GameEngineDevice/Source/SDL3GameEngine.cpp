@@ -67,11 +67,6 @@
 #include "GameClient/Display.h"
 #include "GameClient/VideoPlayer.h"
 #include <jni.h>   // density + haptics come from ZerohourActivity via SDL_GetAndroidJNIEnv()
-#include "GameClient/AndroidHud.h"   // phone HUD geometry, shared with the layout and the draw side
-#include "GameClient/ControlBar.h"   // phone HUD state: which overlay buttons exist, the drawer's footprint
-#include "GameClient/GadgetComboBox.h"   // smart touch: a dropdown's text part opens its list through the arrow button
-#include "GameClient/PlaceEventTranslator.h"   // touch placement: a tap anchors and places the pending structure
-#include "Common/MessageStream.h"    // meta commands the overlay buttons send
 #endif
 
 // Extern globals for input devices (set by GameClient)
@@ -155,8 +150,6 @@ Bool DecodeNextUtf8Codepoint(const char* text, size_t length, size_t& offset, Un
 //     2-finger tap       -> right click: deselect / cancel a placement
 //   Everywhere else (menus, HUD windows, building placement, cutscenes) a finger
 //   is a mouse: tap = left click, drag = left drag, 2-finger tap = right click.
-//   The HUD overlay buttons (☰ menu, control groups, ALL, IDLE; AndroidHud.h) are
-//   hit-tested here before any of that and fire on release.
 //
 // Thresholds are in millimetres from the real display density, never pixels.
 // Nothing here allocates per event: all state lives in fixed-size statics, and
@@ -166,16 +159,12 @@ extern View     *TheTacticalView;
 extern GameLogic *TheGameLogic;
 // In-game ESC/pause menu toggle (QuitMenu.cpp) — same action the desktop ESC key runs.
 extern void ToggleQuitMenu();
-// The HUD overlay button a finger is holding down (AndroidHud::OverlayId, -1 if none) is
-// TheAndroidOverlayPressed, declared in AndroidHud.h and owned by the HUD (ControlBarPhoneLayout.cpp),
-// which draws the pressed state from it; this file sets it.
 
 namespace {
 
 // ------------------------------------------------------------------ tuning --
 const Uint64 TAP_DEFER_MS        = 45;      // classic mode: defer left-down this long to catch a 2nd finger
 const Uint64 CLICK_HOLD_MS       = 150;     // minimum synthesized press duration (the GUI needs it, see below)
-const Uint64 WORLD_CLICK_HOLD_MS = 40;      // a battlefield tap only needs its down and up in different frames
 const Uint64 TWO_TAP_MAX_MS      = 300;     // 2-finger press shorter than this w/o move = right-click
 const Uint64 LONG_PRESS_NS       = 350ull * 1000000ull;  // stationary press that arms box-select
 const Uint64 DOUBLE_TAP_NS       = 300ull * 1000000ull;  // second tap within this = double click
@@ -204,9 +193,7 @@ int          g_tfCount = 0;
 bool         g_leftPending = false;   // 1st finger down; left-down not yet committed
 bool         g_leftHeld    = false;   // a left-button-down was synthesized and is held
 SDL_FingerID g_leftId      = 0;
-float        g_leftSX = 0, g_leftSY = 0;        // where the press lands (after smart touch)
-float        g_leftRawX = 0, g_leftRawY = 0;    // where the finger really came down (tap-slop tests)
-float        g_leftOffX = 0, g_leftOffY = 0;    // smart-touch shift applied to this press's drags and release
+float        g_leftSX = 0, g_leftSY = 0;
 Uint64       g_leftDownMs  = 0;
 
 // Primary (first) finger in a battle. In camera mode the finger is not a mouse until we
@@ -234,16 +221,11 @@ Uint64       g_twoStartMs = 0;
 // until ALL fingers lift (stops a stray drag-box when one finger lifts first)
 bool         g_suppressLeft = false;
 
-// HUD overlay buttons (☰ menu, control groups 1-4, the "+" assign slot, ALL, IDLE): drawn by
-// W3DInGameUI.cpp and hit-tested here from the same ControlBar::phoneOverlays() state. One finger
-// arms one button; it fires on release over the button, and a group button fires its long-press
-// action (assign the selection) after LONG_PRESS_NS instead. A "+" slot (an empty group offered
-// while something is selected) only has the long-press action.
-Int          g_overlayArmed = -1;     // AndroidHud::OverlayId under the first finger, -1 if none
-bool         g_overlayGhost = false;  // the armed button is a "+" slot
-SDL_FingerID g_overlayFingerId = 0;
-Uint64       g_overlayDownNs = 0;
-bool         g_overlayLongFired = false;
+// on-screen ESC/menu button (top-left). Tapping it toggles the in-game pause menu.
+// KEEP THIS GEOMETRY IN SYNC WITH kMenuBtn* IN W3DInGameUI.cpp (the draw side).
+const float  MENU_BTN_X = 16, MENU_BTN_Y = 14, MENU_BTN_W = 108, MENU_BTN_H = 56;
+bool         g_escArmed = false;      // first finger came down on the menu button
+SDL_FingerID g_escFingerId = 0;
 
 // on-screen SKIP button (top-right), shown only during a video/cutscene. Tapping it
 // synthesizes ESC → the movie loops skip. Right-anchored; KEEP IN SYNC WITH W3DDisplay.cpp.
@@ -271,15 +253,14 @@ inline bool videoPlaying() {
 	return (TheVideoPlayer && TheVideoPlayer->firstStream() != NULL)
 	    || (TheDisplay && TheDisplay->isMoviePlaying());
 }
-// A structure is waiting to be placed: the ghost follows the finger, a tap places it, the camera
-// gestures keep working, and a two-finger tap (right click) cancels.
-inline bool placingBuilding() {
-	return TheInGameUI && TheInGameUI->getPendingPlaceType() != nullptr;
-}
-// Overlay buttons are live only while playing, while the pause menu is NOT already up, and
+// The menu button is live only while playing, while the pause menu is NOT already up, and
 // NOT during a cutscene (then the Skip button takes over). Matches W3DInGameUI.cpp's draw gate.
-inline bool overlaysActive() {
+inline bool menuButtonActive() {
 	return inLiveGame() && (!TheInGameUI || !TheInGameUI->isQuitMenuVisible()) && !videoPlaying();
+}
+inline bool onMenuButton(float px, float py) {
+	return px >= MENU_BTN_X && px < MENU_BTN_X + MENU_BTN_W
+	    && py >= MENU_BTN_Y && py < MENU_BTN_Y + MENU_BTN_H;
 }
 inline bool onSkipButton(float px, float py) {
 	float w, h; winSize(w, h);
@@ -454,16 +435,16 @@ void synthLeftDown(float x, float y, Uint8 clicks = 1) {
 }
 // Release a held left button, guaranteeing >= CLICK_HOLD_MS of total press so
 // the GUI registers the click. Long presses/drags release immediately.
-void releaseLeftHeld(float x, float y, Uint64 holdMs = CLICK_HOLD_MS) {
-	Uint64 due = g_leftDownSynthMs + holdMs;
+void releaseLeftHeld(float x, float y) {
+	Uint64 due = g_leftDownSynthMs + CLICK_HOLD_MS;
 	if (SDL_GetTicks() >= due) synthButton(SDL_BUTTON_LEFT, false, x, y);
 	else                       queueUpAt(SDL_BUTTON_LEFT, x, y, due);
 	g_leftHeld = false;
 }
 // A complete left click (or double click) at a point: press now, release after the hold.
-inline void synthClick(float x, float y, Uint8 clicks, Uint64 holdMs = CLICK_HOLD_MS) {
+inline void synthClick(float x, float y, Uint8 clicks) {
 	synthLeftDown(x, y, clicks);
-	releaseLeftHeld(x, y, holdMs);
+	releaseLeftHeld(x, y);
 }
 inline void rightClick(float x, float y) {
 	synthMotion(x, y);
@@ -489,64 +470,6 @@ void toEngine(float px, float py, ICoord2D &out) {
 	float cy = py - (float)pbY; if (cy < 0) cy = 0; if (cy > (float)pbH) cy = (float)pbH;
 	out.x = (Int)(cx * (float)dw / (float)pbW);
 	out.y = (Int)(cy * (float)dh / (float)pbH);
-}
-
-// ---------------------------------------------------- HUD overlay buttons --
-// The buttons that exist right now come from ControlBar::phoneOverlays(), the same call the draw
-// side uses, so a button is tappable exactly where and when it is drawn.
-Int overlayHit(float px, float py, bool *ghost = nullptr) {
-	if (!TheDisplay || !TheControlBar) return -1;
-	ICoord2D s; toEngine(px, py, s);
-	AndroidHud::OverlayState ov[AndroidHud::OVERLAY_COUNT];
-	TheControlBar->phoneOverlays(ov);
-	for (Int i = 0; i < AndroidHud::OVERLAY_COUNT; ++i) {
-		if (ov[i].visible && ov[i].rect.contains(s.x, s.y)) {
-			if (ghost) *ghost = ov[i].ghost != FALSE;
-			return i;
-		}
-	}
-	return -1;
-}
-inline bool overlayIsGroup(Int id) {
-	return id >= AndroidHud::OVERLAY_GROUP_1 && id < AndroidHud::OVERLAY_GROUP_1 + AndroidHud::NUM_CONTROL_GROUPS;
-}
-// Meta commands go through the same message stream the PC hotkeys use, so the engine's own
-// translators (team select/create, select all, next idle worker) do the work.
-inline void appendMeta(GameMessage::Type type) {
-	if (TheMessageStream) TheMessageStream->appendMessage(type);
-}
-// Tap: the button's main action. `ghost`: the button was a "+" slot when it was pressed.
-void overlayFire(Int id, bool ghost) {
-	switch (id) {
-	case AndroidHud::OVERLAY_MENU:        ToggleQuitMenu(); break;
-	case AndroidHud::OVERLAY_SELECT_ALL:  appendMeta(GameMessage::MSG_META_SELECT_ALL); break;
-	case AndroidHud::OVERLAY_IDLE_WORKER: appendMeta(GameMessage::MSG_META_SELECT_NEXT_IDLE_WORKER); break;
-	case AndroidHud::OVERLAY_TAB_0:
-	case AndroidHud::OVERLAY_TAB_1:
-	case AndroidHud::OVERLAY_TAB_2:
-		// a drawer tab: show that page of the menu (the active tab again: its next page)
-		if (TheControlBar) TheControlBar->phoneSelectTab(id - AndroidHud::OVERLAY_TAB_0);
-		haptic(HAPTIC_CLICK);
-		break;
-	default:
-		// select the group; the engine also centres the camera on a quick second tap. A "+" slot
-		// is empty: a tap on it does nothing (selecting an empty group would deselect everything).
-		if (overlayIsGroup(id) && !ghost)
-			appendMeta((GameMessage::Type)(GameMessage::MSG_META_SELECT_TEAM0 + (id - AndroidHud::OVERLAY_GROUP_1)));
-		break;
-	}
-}
-// Long press on a group button: assign the current selection to that group.
-void overlayLongPress(Int id) {
-	if (!overlayIsGroup(id)) return;
-	appendMeta((GameMessage::Type)(GameMessage::MSG_META_CREATE_TEAM0 + (id - AndroidHud::OVERLAY_GROUP_1)));
-	haptic(HAPTIC_TICK);
-}
-inline void endOverlay() {
-	g_overlayArmed = -1;
-	g_overlayGhost = false;
-	g_overlayLongFired = false;
-	TheAndroidOverlayPressed = -1;
 }
 
 // World point on the terrain under a window pixel.
@@ -765,143 +688,20 @@ void pinchZoomFrame(float dt, float cx, float cy, float pinchDist) {
 }
 
 // ------------------------------------------------------- gesture logic --
-// An opaque window (or an opaque ancestor of the window) under the point owns the touch. Same
-// rule as W3DView::pickDrawable.
-bool windowOwnsPoint(float px, float py) {
-	if (!TheWindowManager) return false;
-	ICoord2D s; toEngine(px, py, s);
-	GameWindow *window = TheWindowManager->getWindowUnderCursor(s.x, s.y);
-	while (window) {
-		if (!BitIsSet(window->winGetStatus(), WIN_STATUS_SEE_THRU)) return true;
-		window = window->winGetParent();
-	}
-	return false;
-}
-
-// The HUD's own surfaces: the resource pill, the minimap block (map, rank badge, powers) and the
-// open drawer. A finger that lands on them but on no window (the gaps between tiles, the pill) must
-// not reach the battlefield either. Windows found there are handled as windows (a tile, the minimap).
-bool hudDeadZoneAt(float px, float py) {
-	if (!TheControlBar || !TheControlBar->phoneHudVisible() || !inLiveGame()) return false;
-	if (windowOwnsPoint(px, py)) return false;
-	ICoord2D s; toEngine(px, py, s);
-	const AndroidHud::Metrics &m = TheControlBar->phoneMetrics();
-	if (m.pill.contains(s.x, s.y) || m.mapBlock.contains(s.x, s.y)) return true;
-	AndroidHud::Rect drawer;
-	return TheControlBar->getPhoneDrawerRect(drawer) && drawer.contains(s.x, s.y);
-}
-
-// Camera mode: a finger that comes down on the battlefield itself (not on a HUD window, not in a
-// cutscene or the pause menu) drives the camera. While a structure is being placed the camera
-// still works; the tap itself places (cameraTap).
+// Camera mode: a finger that comes down on the battlefield itself (not on a HUD window, not
+// while placing a building, not in a cutscene or the pause menu) drives the camera.
 bool cameraModeAt(float px, float py) {
 	if (!inLiveGame() || videoPlaying()) return false;
-	if (TheInGameUI && TheInGameUI->isQuitMenuVisible()) return false;
-	return !windowOwnsPoint(px, py);
-}
-
-// ------------------------------------------------------------ smart touch --
-// GeneralsX @feature Android smart touch 19/10/2026 (docs/MOBILE-UX-SPEC.md §7). The PC screens
-// are laid out for a mouse: rows and dropdown arrows of 2–3 mm. When a finger lands on no
-// interactive control, the press moves to the nearest interactive gadget within SMART_TOUCH_MM;
-// when it lands on a dropdown's text, it moves to the dropdown's arrow (which opens the list). So
-// every screen becomes tappable without touching its layout. Never in a battle unless the pause
-// menu is up: there a miss is the ground.
-const float SMART_TOUCH_MM = 4.0f;
-
-inline bool interactiveStyle(UnsignedInt style) {
-	return (style & (GWS_PUSH_BUTTON | GWS_RADIO_BUTTON | GWS_CHECK_BOX | GWS_VERT_SLIDER | GWS_HORZ_SLIDER
-	               | GWS_SCROLL_LISTBOX | GWS_ENTRY_FIELD | GWS_TAB_CONTROL | GWS_COMBO_BOX)) != 0;
-}
-// A dropdown's text box: the arrow button beside it is what opens the list.
-inline GameWindow *comboArrowFor(GameWindow *w) {
-	GameWindow *parent = w ? w->winGetParent() : nullptr;
-	if (parent && (parent->winGetInstanceData()->getStyle() & GWS_COMBO_BOX)
-	    && (w->winGetInstanceData()->getStyle() & GWS_ENTRY_FIELD))
-		return GadgetComboBoxGetDropDownButton(parent);
-	return nullptr;
-}
-inline void windowCentre(GameWindow *w, Int &x, Int &y) {
-	ICoord2D pos, size;
-	w->winGetScreenPosition(&pos.x, &pos.y);
-	w->winGetSize(&size.x, &size.y);
-	x = pos.x + size.x / 2;
-	y = pos.y + size.y / 2;
-}
-// The point of a window's rectangle nearest to (x, y), kept 2 px inside, and its squared distance.
-void nearestPointIn(GameWindow *w, Int x, Int y, Int &nx, Int &ny, float &d2) {
-	ICoord2D pos, size;
-	w->winGetScreenPosition(&pos.x, &pos.y);
-	w->winGetSize(&size.x, &size.y);
-	const Int x0 = pos.x + 2, x1 = pos.x + size.x - 3, y0 = pos.y + 2, y1 = pos.y + size.y - 3;
-	nx = x < x0 ? x0 : (x > x1 ? x1 : x);
-	ny = y < y0 ? y0 : (y > y1 ? y1 : y);
-	const float dx = (float)(nx - x), dy = (float)(ny - y);
-	d2 = dx * dx + dy * dy;
-}
-struct NearestGadget { GameWindow *win; float d2; Int x, y; };
-// Depth-first over a window and its children with the hit test's reachability rules: a hidden or
-// disabled window and everything below it are out; a no-input window is skipped, its children not.
-void nearestGadgetIn(GameWindow *w, Int x, Int y, NearestGadget &best) {
-	const UnsignedInt st = w->winGetStatus();
-	if (BitIsSet(st, WIN_STATUS_HIDDEN) || !BitIsSet(st, WIN_STATUS_ENABLED)) return;
-	if (!BitIsSet(st, WIN_STATUS_NO_INPUT) && interactiveStyle(w->winGetInstanceData()->getStyle())) {
-		Int nx, ny; float d2;
-		nearestPointIn(w, x, y, nx, ny, d2);
-		if (d2 < best.d2) { best.win = w; best.d2 = d2; best.x = nx; best.y = ny; }
-	}
-	for (GameWindow *c = w->winGetChild(); c; c = c->winGetNext()) nearestGadgetIn(c, x, y, best);
-}
-inline bool smartTouchActive() {
-	if (videoPlaying() || !TheWindowManager) return false;
-	return !inLiveGame() || (TheInGameUI && TheInGameUI->isQuitMenuVisible());
-}
-// Engine display coordinates -> window pixels (the inverse of toEngine).
-void fromEngine(Int ex, Int ey, float &px, float &py) {
-	float w, h; winSize(w, h);
-	Int dw = (TheDisplay && TheDisplay->getWidth())  ? (Int)TheDisplay->getWidth()  : (Int)w;
-	Int dh = (TheDisplay && TheDisplay->getHeight()) ? (Int)TheDisplay->getHeight() : (Int)h;
-	Int pbX = 0, pbY = 0, pbW = (Int)w, pbH = (Int)h;
-	if (TheDisplay && !TheDisplay->getViewportRect(pbX, pbY, pbW, pbH)) { pbX = 0; pbY = 0; pbW = (Int)w; pbH = (Int)h; }
-	if (dw <= 0) dw = 1;
-	if (dh <= 0) dh = 1;
-	px = (float)pbX + (float)ex * (float)pbW / (float)dw;
-	py = (float)pbY + (float)ey * (float)pbH / (float)dh;
-}
-// Moves a classic-mode press to where it was meant to land. Returns whether it moved.
-bool smartTouchAdjust(float &px, float &py) {
-	if (!smartTouchActive()) return false;
-	ICoord2D s; toEngine(px, py, s);
-	GameWindow *under = TheWindowManager->getWindowUnderCursor(s.x, s.y);
-	GameWindow *target = nullptr;
-	Int tx = s.x, ty = s.y;
-	if (under) {
-		if (GameWindow *arrow = comboArrowFor(under)) {
-			target = arrow;
-			windowCentre(arrow, tx, ty);
-		} else if (interactiveStyle(under->winGetInstanceData()->getStyle())) {
-			return false;   // already on a control
+	if (TheInGameUI && (TheInGameUI->isQuitMenuVisible() || TheInGameUI->getPendingPlaceType() != nullptr)) return false;
+	if (TheWindowManager) {
+		ICoord2D s; toEngine(px, py, s);
+		GameWindow *window = TheWindowManager->getWindowUnderCursor(s.x, s.y);
+		// Same rule as W3DView::pickDrawable: an opaque window (or opaque parent) owns the touch.
+		while (window) {
+			if (!BitIsSet(window->winGetStatus(), WIN_STATUS_SEE_THRU)) return false;
+			window = window->winGetParent();
 		}
 	}
-	if (!target) {
-		float w, h; winSize(w, h);
-		const float dw = (TheDisplay && TheDisplay->getWidth()) ? (float)TheDisplay->getWidth() : w;
-		const float reach = mm(SMART_TOUCH_MM) * dw / (w > 0.0f ? w : 1.0f);   // in engine px
-		NearestGadget best = { nullptr, reach * reach, s.x, s.y };
-		if (GameWindow *modal = TheWindowManager->winGetModalWindow()) {
-			nearestGadgetIn(modal, s.x, s.y, best);
-		} else {
-			for (GameWindow *top = TheWindowManager->winGetWindowList(); top; top = top->winGetNext())
-				nearestGadgetIn(top, s.x, s.y, best);
-		}
-		if (!best.win) return false;
-		target = best.win; tx = best.x; ty = best.y;
-		if (GameWindow *arrow = comboArrowFor(target)) {
-			target = arrow;
-			windowCentre(arrow, tx, ty);
-		}
-	}
-	fromEngine(tx, ty, px, py);
 	return true;
 }
 
@@ -914,17 +714,6 @@ inline void clampInsideEdges(float &px, float &py) {
 
 // A camera-mode tap: a left click, or a left double click when it follows another tap closely.
 void cameraTap(float x, float y, Uint64 now) {
-	if (placingBuilding()) {
-		// Place the pending structure here. The PC anchors on the mouse-down and places on the click
-		// message, both after the window layer has had its say; the phone does both steps directly
-		// (AndroidPlacementTap), so a placement tap cannot be lost on the way. The motion first moves
-		// the engine's ghost to the spot, which is what stays on screen when the spot is illegal.
-		synthMotion(x, y);
-		ICoord2D s; toEngine(x, y, s);
-		haptic(AndroidPlacementTap(s) ? HAPTIC_CLICK : HAPTIC_ERROR);
-		g_lastTapNs = 0;
-		return;
-	}
 	Uint8 clicks = 1;
 	if (g_lastTapNs != 0 && now - g_lastTapNs <= DOUBLE_TAP_NS && dist2D(x, y, g_lastTapX, g_lastTapY) <= mm(DOUBLE_TAP_MM)) {
 		clicks = 2;
@@ -932,7 +721,7 @@ void cameraTap(float x, float y, Uint64 now) {
 	} else {
 		g_lastTapNs = now; g_lastTapX = x; g_lastTapY = y;
 	}
-	synthClick(x, y, clicks, WORLD_CLICK_HOLD_MS);   // the world needs no GUI-length press
+	synthClick(x, y, clicks);
 }
 
 void endPrimary() {
@@ -969,22 +758,14 @@ void handleFingerDown(const SDL_TouchFingerEvent &tf) {
 		g_tfCount++;
 	}
 	if (g_tfCount == 1) {
-		bool ghost = false;
-		const Int overlay = (firstFinger && overlaysActive()) ? overlayHit(px, py, &ghost) : -1;
 		if (firstFinger && videoPlaying() && onSkipButton(px, py)) {
 			// press landed on the SKIP button during a cutscene — arm it, no select
 			g_skipArmed = true; g_skipFingerId = tf.fingerID;
 			g_leftPending = false; g_leftHeld = false;
 			g_pm = PM_NONE;
-		} else if (overlay >= 0) {
-			// press landed on a HUD overlay button — arm it, don't start a select/drag
-			g_overlayArmed = overlay; g_overlayGhost = ghost; g_overlayFingerId = tf.fingerID;
-			g_overlayDownNs = now; g_overlayLongFired = false;
-			TheAndroidOverlayPressed = overlay;
-			g_leftPending = false; g_leftHeld = false;
-			g_pm = PM_NONE;
-		} else if (hudDeadZoneAt(px, py)) {
-			// press landed on the HUD's strip or drawer but on no control: swallow it
+		} else if (firstFinger && menuButtonActive() && onMenuButton(px, py)) {
+			// press landed on the on-screen menu button — arm it, don't start a select/drag
+			g_escArmed = true; g_escFingerId = tf.fingerID;
 			g_leftPending = false; g_leftHeld = false;
 			g_pm = PM_NONE;
 		} else if (cameraModeAt(px, py)) {
@@ -998,15 +779,11 @@ void handleFingerDown(const SDL_TouchFingerEvent &tf) {
 			g_pm = PM_CLASSIC;
 			g_primaryId = tf.fingerID;
 			g_leftPending = true; g_leftHeld = false;
-			g_leftId = tf.fingerID;
-			g_leftRawX = px; g_leftRawY = py;
-			g_leftSX = px; g_leftSY = py;
-			smartTouchAdjust(g_leftSX, g_leftSY);   // menus: land on the nearest control
-			g_leftOffX = g_leftSX - px; g_leftOffY = g_leftSY - py;
+			g_leftId = tf.fingerID; g_leftSX = px; g_leftSY = py;
 			g_leftDownMs = SDL_GetTicks();
 		}
 	} else if (g_tfCount == 2) {
-		endOverlay(); g_skipArmed = false;   // a 2nd finger cancels the button arm
+		g_escArmed = false; g_skipArmed = false;   // a 2nd finger cancels the button arm
 		if (g_pm == PM_CAM_BOX) {
 			return;   // a second finger during box-select is ignored; the box carries on
 		}
@@ -1021,12 +798,6 @@ void handleFingerMotion(const SDL_TouchFingerEvent &tf) {
 	float px = tf.x * w, py = tf.y * h;
 	g_tf[idx].x = px; g_tf[idx].y = py;
 	const Uint64 now = SDL_GetTicksNS();
-
-	if (g_overlayArmed >= 0 && tf.fingerID == g_overlayFingerId) {
-		// the pressed look follows the finger: off the button means "release will not fire"
-		TheAndroidOverlayPressed = (overlayHit(px, py) == g_overlayArmed) ? g_overlayArmed : -1;
-		return;
-	}
 
 	if (g_two && g_tfCount == 2) {
 		// The camera work for two fingers happens once per frame in touchFrame();
@@ -1043,16 +814,14 @@ void handleFingerMotion(const SDL_TouchFingerEvent &tf) {
 
 	switch (g_pm) {
 	case PM_CLASSIC:
-		// the smart-touch shift of the press stays on the whole drag, so a slider grabbed through
-		// it follows the finger from where the press landed
 		if (g_leftPending && !g_leftHeld) {
-			if (dist2D(px, py, g_leftRawX, g_leftRawY) > mm(TAP_SLOP_MM)) {
-				synthLeftDown(g_leftSX, g_leftSY);   // anchor the drag at the press point
+			if (dist2D(px, py, g_leftSX, g_leftSY) > mm(TAP_SLOP_MM)) {
+				synthLeftDown(g_leftSX, g_leftSY);   // anchor the drag at the touch point
 				g_leftPending = false;
-				synthMotion(px + g_leftOffX, py + g_leftOffY);
+				synthMotion(px, py);
 			}
 		} else if (g_leftHeld) {
-			synthMotion(px + g_leftOffX, py + g_leftOffY);
+			synthMotion(px, py);
 		}
 		break;
 
@@ -1110,15 +879,13 @@ void handleFingerUp(const SDL_TouchFingerEvent &tf) {
 		return;
 	}
 
-	// HUD overlay button: fire only if the finger lifts while still over it and no long-press fired
-	if (g_overlayArmed >= 0 && tf.fingerID == g_overlayFingerId) {
-		const Int id = g_overlayArmed;
-		const bool ghost = g_overlayGhost;
-		const bool fire = !g_overlayLongFired && overlaysActive() && overlayHit(px, py) == id;
-		endOverlay();
+	// on-screen menu button: fire only if the finger lifts while still over the button
+	if (g_escArmed && tf.fingerID == g_escFingerId) {
+		bool fire = onMenuButton(px, py) && menuButtonActive();
+		g_escArmed = false;
 		dropFinger(idx);
 		if (g_tfCount == 0) { g_suppressLeft = false; g_leftPending = false; g_leftHeld = false; endPrimary(); }
-		if (fire) overlayFire(id, ghost);
+		if (fire) ToggleQuitMenu();
 		return;
 	}
 
@@ -1136,7 +903,7 @@ void handleFingerUp(const SDL_TouchFingerEvent &tf) {
 		switch (g_pm) {
 		case PM_CLASSIC:
 			if (g_leftHeld) {
-				releaseLeftHeld(px + g_leftOffX, py + g_leftOffY);
+				releaseLeftHeld(px, py);
 			} else if (g_leftPending) {
 				// fast tap: finger lifted before the commit-defer — press now, and the
 				// up is guaranteed to trail by >= CLICK_HOLD_MS so the click registers.
@@ -1152,8 +919,7 @@ void handleFingerUp(const SDL_TouchFingerEvent &tf) {
 			startFling(px, py, now);
 			break;
 		case PM_CAM_ARMED:
-			if (placingBuilding()) cameraTap(g_pSX, g_pSY, now);   // a slow tap still places
-			else synthClick(g_pSX, g_pSY, 1, WORLD_CLICK_HOLD_MS);    // long-press without a drag: just a (slow) tap
+			synthClick(g_pSX, g_pSY, 1);    // long-press without a drag: just a (slow) tap
 			break;
 		case PM_CAM_BOX:
 			clampInsideEdges(px, py);
@@ -1165,7 +931,7 @@ void handleFingerUp(const SDL_TouchFingerEvent &tf) {
 		endPrimary();
 	}
 	dropFinger(idx);
-	if (g_tfCount == 0) { g_suppressLeft = false; endOverlay(); g_skipArmed = false; endPrimary(); }
+	if (g_tfCount == 0) { g_suppressLeft = false; g_escArmed = false; g_skipArmed = false; endPrimary(); }
 }
 
 // Run once per event-pump after draining events: release any due synthesized
@@ -1179,15 +945,9 @@ void touchTick() {
 			g_leftPending = false;
 		}
 	}
-	if (g_pm == PM_CAM_PENDING && g_tfCount == 1 && !placingBuilding() && SDL_GetTicksNS() - g_pDownNs >= LONG_PRESS_NS) {
-		g_pm = PM_CAM_ARMED;   // (not while placing: a box-select press would anchor the structure)
+	if (g_pm == PM_CAM_PENDING && g_tfCount == 1 && SDL_GetTicksNS() - g_pDownNs >= LONG_PRESS_NS) {
+		g_pm = PM_CAM_ARMED;
 		haptic(HAPTIC_TICK);
-	}
-	if (g_overlayArmed >= 0 && !g_overlayLongFired && overlayIsGroup(g_overlayArmed)
-	    && SDL_GetTicksNS() - g_overlayDownNs >= LONG_PRESS_NS) {
-		g_overlayLongFired = true;         // the release will not also select the group
-		TheAndroidOverlayPressed = -1;
-		overlayLongPress(g_overlayArmed);
 	}
 }
 
@@ -1335,8 +1095,6 @@ void SDL3GameEngine::init(void)
 	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
 	SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
 	fprintf(stderr, "INFO: Android touch controls enabled (grab pan + fling, long-press box select, anchored pinch zoom)\n");
-	// The phone HUD (ControlBarPhoneLayout.cpp, W3DInGameUI.cpp) sizes itself in millimetres too.
-	TheAndroidPixelsPerMm = pxPerMm();
 #endif
 
 	fprintf(stderr, "INFO: SDL3GameEngine using pre-initialized window\n");

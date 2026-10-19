@@ -130,13 +130,6 @@ void ControlBarPopupDescriptionUpdateFunc( WindowLayout *layout, void *param )
 
 void ControlBar::showBuildTooltipLayout( GameWindow *cmdButton )
 {
-#if defined(__ANDROID__)
-	// GeneralsX @feature Android smart HUD 19/10/2026 The PC's popup description is laid out for the
-	// 4:3 bar and anchors to markers the phone layout parks off-screen; a finger has no hover anyway.
-	// The phone shows the touched tile's name beside the drawer instead (W3DInGameUI.cpp).
-	(void)cmdButton;
-	return;
-#endif
 	if (TheInGameUI->areTooltipsDisabled() 	|| TheScriptEngine->isGameEnding())
 	{
 		return;

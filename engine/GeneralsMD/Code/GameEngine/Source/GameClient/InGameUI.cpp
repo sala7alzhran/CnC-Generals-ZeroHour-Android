@@ -1372,20 +1372,6 @@ void InGameUI::init()
 		}
 	}
 
-#if defined(__ANDROID__)
-	// GeneralsX @feature Android smart HUD 19/10/2026 The countdown fonts are PC point sizes (10-14
-	// px): under a millimetre on a phone. Size them physically like the rest of the HUD.
-	if( TheDisplay )
-	{
-		const Int w = TheDisplay->getWidth(), h = TheDisplay->getHeight();
-		const Real pxPerMm = AndroidHud::pixelsPerMmFor( w, h );
-		m_superweaponNormalPointSize = AndroidHud::mmToPx( 2.4f, pxPerMm );
-		m_superweaponReadyPointSize  = AndroidHud::mmToPx( 2.6f, pxPerMm );
-		m_namedTimerNormalPointSize  = AndroidHud::mmToPx( 2.4f, pxPerMm );
-		m_namedTimerReadyPointSize   = AndroidHud::mmToPx( 2.6f, pxPerMm );
-	}
-#endif
-
 	/**@ todo we used to put in the hint spy translator, but it's difficult
 	to order the translators when the code is not centralized so it has
 	been moved to where all the other translators are attached in game client */
@@ -3864,14 +3850,6 @@ void InGameUI::postDraw()
 //	Int superweaponCount = 0;
 		Int startX = (Int)(m_superweaponPosition.x * TheDisplay->getWidth());
 		Int startY = (Int)(m_superweaponPosition.y * TheDisplay->getHeight());
-#if defined(__ANDROID__)
-		// GeneralsX @feature Android smart HUD: the countdowns sit under the generals' powers (§6.3)
-		if( TheControlBar && TheControlBar->phoneHudVisible() )
-		{
-			startX = TheControlBar->phoneMetrics().superweaponTimers.x;
-			startY = TheControlBar->phoneMetrics().superweaponTimers.y;
-		}
-#endif
 
 		Int bottomMargin = (Int)( (Real)TheTacticalView->getHeight() * 0.82f );
 
@@ -4082,15 +4060,6 @@ void InGameUI::postDraw()
 		Bool reverseXDir = (m_namedTimerPosition.x >= 0.5f);
 		Int startX = (Int)(m_namedTimerPosition.x * TheDisplay->getWidth());
 		Int startY = (Int)(m_namedTimerPosition.y * TheDisplay->getHeight());
-#if defined(__ANDROID__)
-		// GeneralsX @feature Android smart HUD: mission timers at the bottom of the left column (§6.3)
-		if( TheControlBar && TheControlBar->phoneHudVisible() )
-		{
-			reverseXDir = FALSE;
-			startX = TheControlBar->phoneMetrics().namedTimers.x;
-			startY = TheControlBar->phoneMetrics().namedTimers.y;
-		}
-#endif
 		Color bgColor = GameMakeColor( 0, 0, 0, 255 );
 		for (NamedTimerMapIt mapIt = m_namedTimers.begin(); mapIt != m_namedTimers.end(); ++mapIt)
 		{
@@ -5948,22 +5917,6 @@ Int InGameUI::getIdleWorkerCount()
 	Int index = player->getPlayerIndex();
 	return m_idleWorkers[index].size();
 }
-
-#if defined(__ANDROID__)
-// GeneralsX @feature Android smart HUD 19/10/2026
-Int InGameUI::androidIdleWorkers( const ThingTemplate **firstTemplate )
-{
-	if( firstTemplate )
-		*firstTemplate = nullptr;
-	Player *player = rts::getObservedOrLocalPlayer();
-	if( !player )
-		return 0;
-	const ObjectList &idle = m_idleWorkers[ player->getPlayerIndex() ];
-	if( firstTemplate && !idle.empty() && idle.front() )
-		*firstTemplate = idle.front()->getTemplate();
-	return (Int)idle.size();
-}
-#endif
 
 void InGameUI::showIdleWorkerLayout()
 {

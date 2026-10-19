@@ -1405,27 +1405,7 @@ UnicodeString GameTextManager::fetch( const Char *label, Bool *exists )
 
 		// See if we already have the missing string
 		UnicodeString missingString;
-#if defined(__ANDROID__)
-		// GeneralsX @tweak Android 19/10/2026 A label the player's CSF lacks reads as a name made from
-		// its key ("GUI:CustomMission" -> "Custom Mission") rather than a MISSING marker in the menus.
-		{
-			const char *name = strrchr( label, ':' );
-			name = name ? name + 1 : label;
-			if( *name == '\0' )
-				name = label;
-			char previous = ' ';
-			for( const char *c = name; *c; ++c )
-			{
-				char ch = *c == '_' ? ' ' : *c;
-				if( ch >= 'A' && ch <= 'Z' && ((previous >= 'a' && previous <= 'z') || (previous >= '0' && previous <= '9')) )
-					missingString.concat( L' ' );
-				missingString.concat( (WideChar)(unsigned char)ch );
-				previous = ch;
-			}
-		}
-#else
 		missingString.format(L"MISSING: '%hs'", label);
-#endif
 
 		NoString *noString = m_noStringList;
 

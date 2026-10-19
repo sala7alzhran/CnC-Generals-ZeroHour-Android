@@ -891,6 +891,7 @@ ControlBar::ControlBar()
 #if defined(__ANDROID__)
 	m_phoneLayoutDirty = TRUE;
 	m_phoneVisibleRows = -1;
+	m_phoneIdleWorkerButton = nullptr;
 #endif
 	m_observerLookAtPlayer = nullptr;
 	m_observedPlayer = nullptr;

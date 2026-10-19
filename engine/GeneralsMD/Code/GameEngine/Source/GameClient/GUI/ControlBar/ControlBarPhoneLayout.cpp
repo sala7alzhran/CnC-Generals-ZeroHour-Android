@@ -180,6 +180,12 @@ GameFont *ControlBar::getPhoneHudFont( Real heightMm )
 }
 
 //-------------------------------------------------------------------------------------------------
+Bool ControlBar::phoneHasIdleWorker() const
+{
+	return m_phoneIdleWorkerButton != nullptr && m_phoneIdleWorkerButton->winGetEnabled();
+}
+
+//-------------------------------------------------------------------------------------------------
 /** The full layout pass. Runs from update() whenever the bar was (re)built, a faction scheme was
 	* applied or the stage changed: those are the moments the engine itself repositions windows. */
 //-------------------------------------------------------------------------------------------------
@@ -246,9 +252,12 @@ void ControlBar::applyPhoneLayout()
 	passThrough( master );
 	makePassThrough( master, leaves, panels, skip );
 
-	// 2. controls the phone replaces (menu = the ☰ overlay, idle worker = the left column) or drops
+	// 2. controls the phone replaces (menu = the ☰ overlay, idle worker = the left column) or drops.
+	//    InGameUI keeps enabling/disabling the idle-worker button with the idle count, so the hidden
+	//    window stays the source of truth for the IDLE overlay's dimmed state.
+	m_phoneIdleWorkerButton = findBarWindow( "ControlBar.wnd:ButtonIdleWorker" );
 	hideAndPark( findBarWindow( "ControlBar.wnd:ButtonLarge" ) );
-	hideAndPark( findBarWindow( "ControlBar.wnd:ButtonIdleWorker" ) );
+	hideAndPark( m_phoneIdleWorkerButton );
 	hideAndPark( findBarWindow( "ControlBar.wnd:ButtonOptions" ) );
 	hideAndPark( findBarWindow( "ControlBar.wnd:GeneralsExp" ) );
 	hideAndPark( findBarWindow( "ControlBar.wnd:ExpBarForeground" ) );

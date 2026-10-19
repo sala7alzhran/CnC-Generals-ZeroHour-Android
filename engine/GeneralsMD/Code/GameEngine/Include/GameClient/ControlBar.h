@@ -769,6 +769,7 @@ public:
 	void markPhoneLayoutDirty() { m_phoneLayoutDirty = TRUE; }
 	void placePhoneWindow( GameWindow *win, Int screenX, Int screenY, Int width, Int height );
 	GameFont *getPhoneHudFont( Real heightMm );		///< the HUD's text font at a physical height, for overlay labels
+	Bool phoneHasIdleWorker() const;							///< InGameUI enables the bar's idle-worker button while a worker is idle
 #endif
 
 	const Image *getStarImage();
@@ -905,6 +906,7 @@ protected:
 	void updatePhoneDrawer();											///< per-frame: grow the command drawer with the rows in use
 	Bool m_phoneLayoutDirty;											///< the phone layout must be re-applied
 	Int  m_phoneVisibleRows;											///< command grid rows currently laid out (-1 = none yet)
+	GameWindow *m_phoneIdleWorkerButton;					///< the bar's (hidden) idle-worker button, read for its enabled state
 #endif
 
 	CommandButton *m_commandButtons;							///< list of possible commands to have

@@ -473,7 +473,7 @@ namespace {
 		}
 		drawOverlayFrame( m.overlay[ AndroidHud::OVERLAY_SELECT_ALL ], TheAndroidOverlayPressed == AndroidHud::OVERLAY_SELECT_ALL, FALSE );
 		drawOverlayLabel( AndroidHud::OVERLAY_SELECT_ALL, m.overlay[ AndroidHud::OVERLAY_SELECT_ALL ], FALSE );
-		const Bool noIdle = !TheInGameUI || TheInGameUI->getIdleWorkerCount() == 0;
+		const Bool noIdle = !TheControlBar || !TheControlBar->phoneHasIdleWorker();
 		drawOverlayFrame( m.overlay[ AndroidHud::OVERLAY_IDLE_WORKER ], TheAndroidOverlayPressed == AndroidHud::OVERLAY_IDLE_WORKER, noIdle );
 		drawOverlayLabel( AndroidHud::OVERLAY_IDLE_WORKER, m.overlay[ AndroidHud::OVERLAY_IDLE_WORKER ], noIdle );
 	}

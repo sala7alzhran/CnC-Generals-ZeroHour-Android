@@ -211,6 +211,13 @@ public:
 	virtual void setZoomToDefault() { m_zoom  = 1.0f; } ///< Set zoom to default value
 	virtual void setOkToAdjustHeight( Bool val ) { m_okToAdjustHeight = val; }	///< Set this to adjust camera height
 
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android touch camera 19/10/2026 The gesture layer (SDL3GameEngine.cpp) drives
+	// the zoom height itself and needs the limits to ease a pinch into them instead of hard clamping.
+	Real getMinHeightAboveGround() const { return m_minHeightAboveGround; }
+	Real getMaxHeightAboveGround() const { return m_maxHeightAboveGround; }
+#endif
+
 	// TheSuperHackers @info Functions to call for user camera controls, not by the scripted camera.
 	Bool userSetPosition(const Coord3D &pos)             { return doUserAction(&View::setPosition, pos); }
 	Bool userSetAngle(Real radians)                      { return doUserAction(&View::setAngle, radians); }

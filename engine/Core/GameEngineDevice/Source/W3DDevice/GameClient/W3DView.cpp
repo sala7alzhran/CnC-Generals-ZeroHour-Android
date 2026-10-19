@@ -104,6 +104,17 @@ static const Real DRAWABLE_OVERSCAN = 75.0f;  ///< 3D world coords of how much t
 
 constexpr const Real NearZ = MAP_XY_FACTOR; ///< Set the near to MAP_XY_FACTOR. Improves z buffer resolution.
 
+#if defined(__ANDROID__)
+// GeneralsX @feature Android touch camera 19/10/2026 Phone camera range (docs/MOBILE-UX-SPEC.md §5),
+// in world units above the ground. These are absolute: the desktop aspect-ratio compensation in
+// setCameraHeightAboveGroundLimitsToDefault() is skipped on phones (see there).
+constexpr const Real ANDROID_MIN_CAMERA_HEIGHT = 70.0f;
+constexpr const Real ANDROID_MAX_CAMERA_HEIGHT = 550.0f;
+// Battles start at this fraction of the maximum height, so units are about 1.5x bigger than at
+// the PC default (which starts fully zoomed out).
+constexpr const Real ANDROID_START_CAMERA_HEIGHT_FRACTION = 0.67f;
+#endif
+
 //=================================================================================================
 inline Real minf(Real a, Real b) { if (a < b) return a; else return b; }
 inline Real maxf(Real a, Real b) { if (a > b) return a; else return b; }
@@ -2236,6 +2247,14 @@ void W3DView::setPitchToDefault()
 //-------------------------------------------------------------------------------------------------
 void W3DView::setCameraHeightAboveGroundLimitsToDefault(Real heightScale)
 {
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android touch camera 19/10/2026 Phones get absolute limits. The aspect-ratio
+	// compensation below raises both limits by ~1.9x on a 20:9 phone, which is what left an infantry
+	// unit 1.6 mm tall at the closest zoom; and a much wider range is wanted so one pinch goes from
+	// "read the unit" to "see the whole base" (docs/MOBILE-UX-SPEC.md §5).
+	m_maxHeightAboveGround = ANDROID_MAX_CAMERA_HEIGHT * heightScale;
+	m_minHeightAboveGround = ANDROID_MIN_CAMERA_HEIGHT;
+#else
 	// TheSuperHackers @fix Mauller Adjust the camera height to compensate for the screen aspect ratio
 	Real baseAspectRatio = (Real)DEFAULT_DISPLAY_WIDTH / (Real)DEFAULT_DISPLAY_HEIGHT;
 	Real currentAspectRatio = (Real)TheTacticalView->getWidth() / (Real)TheTacticalView->getHeight();
@@ -2252,6 +2271,7 @@ void W3DView::setCameraHeightAboveGroundLimitsToDefault(Real heightScale)
 
 	m_maxHeightAboveGround = TheGlobalData->m_maxCameraHeight * aspectRatioScale * heightScale;
 	m_minHeightAboveGround = TheGlobalData->m_minCameraHeight * aspectRatioScale;
+#endif
 
 	if (m_minHeightAboveGround > m_maxHeightAboveGround)
 		m_maxHeightAboveGround = m_minHeightAboveGround;
@@ -2302,9 +2322,16 @@ void W3DView::setZoom(Real z)
 //-------------------------------------------------------------------------------------------------
 void W3DView::setZoomToMax()
 {
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android touch camera 19/10/2026 On a phone the fully zoomed-out view makes
+	// units too small to tap, so a battle starts part-way in; a pinch still reaches the maximum.
+	m_heightAboveGround = m_maxHeightAboveGround * ANDROID_START_CAMERA_HEIGHT_FRACTION;
+	m_zoom = getDesiredZoom(m_pos.x, m_pos.y);
+#else
 	// default zoom has to be max, otherwise players will just zoom to max always
 	m_heightAboveGround = m_maxHeightAboveGround;
 	m_zoom = getMaxZoom(m_pos.x, m_pos.y);
+#endif
 
 	m_cameraAreaConstraintsValid = false; // recalc it.
 	m_recalcCamera = true;

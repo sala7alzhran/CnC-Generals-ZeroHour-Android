@@ -35,6 +35,13 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
 - **Added** the on‑screen **▶▶** cutscene Skip button (synthesizes `KEY_ESC`).
 - **Added** a persisted touch sensitivity control (repurposes Options→Scroll Speed for pan+zoom).
 - Disabled SDL's built‑in touch→mouse synthesis (set before `SDL_InitSubSystem`).
+- **Added** phone camera gestures (MOBILE‑UX‑SPEC Phase A): 1‑finger grab pan that keeps the
+  terrain under the finger at every zoom, fling with exponential decay, long‑press box‑select
+  with edge pan, double‑tap same‑type select, pinch zoom anchored under the fingers with soft
+  limits. Thresholds in mm from the display density (JNI), haptic tick on long‑press.
+- **Changed** the camera range on Android to 70–550 world units above ground (absolute, no
+  aspect‑ratio compensation) and battles start 33 % zoomed in; the alternate‑mouse option is
+  pinned off so a tap always selects/orders and a 2‑finger tap always deselects.
 
 ## Audio
 - **Fixed** total silence: `SDL3Main.cpp` forced desktop OpenAL drivers on Android (`__linux__`

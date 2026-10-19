@@ -73,6 +73,13 @@ JAVA_HOME=/path/to/jdk-17 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+Debug builds are signed with the committed `android/app/debug.keystore` (the standard debug key
+material, alias/password `android`), so an APK from CI or from any machine installs **over** the
+previous one and keeps the imported game data. If you still have a build signed with a random
+per-machine debug key, `adb install -r` fails once with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`:
+uninstall that build, install the new one, import the game data again — from then on updates
+are in place.
+
 The app reads game data from its internal storage: the native entry point (`SDL3Main.cpp`)
 `chdir()`s to `/data/user/0/org.generalsx.zerohour/files` and loads `Data/` and the `*.big`
 archives relative to that. You must place the game data there — see below.

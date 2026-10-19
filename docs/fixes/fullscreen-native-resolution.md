@@ -47,3 +47,37 @@ Fix in the app theme:
 which removes the side bar. It needs API 28+ (the app's `minSdk` is 28). This is pure app
 configuration — no engine or SDL code is touched.
 
+
+## Follow‑up: the status bar and navigation bar came back (`ZerohourActivity.java`)
+
+### Symptom
+
+On the owner's POCO F7 Pro (Android 16) the game sometimes ran with the system bars painted over
+it: `dumpsys` showed the window at the full `[0,0][2400,1080]` but `InsetsSource statusBars
+frame=[0,0][2400,121] visible=true` and `navigationBars frame=[2267,0][2400,1080] visible=true`,
+so the top 121 px and right 133 px of the image were covered (a half‑cut SKIRMISH title, the ☰
+button and the end of the command bar hidden). The same phone had been fully immersive in an
+earlier session, so it depended on what happened on the way in (a folder picker in portrait, a
+touch on an edge, the soft keyboard).
+
+### Root cause
+
+SDL's `SDLActivity` hides the bars with the legacy `View.SYSTEM_UI_FLAG_FULLSCREEN |
+HIDE_NAVIGATION | IMMERSIVE_STICKY` flags and re‑hides them from a
+`setOnSystemUiVisibilityChangeListener` callback. Both APIs are deprecated since API 30 and, with
+edge‑to‑edge enforced for `targetSdk 35`, the system can show the bars and drop the two hide
+flags (`vsysui` kept only `IMMERSIVE_STICKY|LAYOUT_HIDE_NAVIGATION|LAYOUT_FULLSCREEN`) without
+the legacy callback ever firing, so nothing hid them again.
+
+### Fix
+
+`ZerohourActivity` owns immersive mode with the current API:
+
+- `WindowInsetsController.hide(statusBars | navigationBars)` with
+  `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE` (a swipe shows the bars briefly, then they go away by
+  themselves), `setDecorFitsSystemWindows(false)` and `LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS` so
+  the surface stays edge to edge; the legacy flags remain for API 28–29.
+- It is applied in `onCreate`, `onResume` and `onWindowFocusChanged(true)`, and an
+  `OnApplyWindowInsetsListener` on the decor view re‑applies it 1.5 s after the insets report a
+  bar visible (debounced, so a deliberate swipe is still seen). `SDLSurface` keeps its own insets
+  listener for the safe area it reports to native; ours consumes nothing.

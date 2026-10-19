@@ -144,4 +144,4 @@ minimap, six column slots fit, queue + portrait fit the drawer's width).
 ## What is not in this step
 
 Placement flow with ✓/✗/rotate, 3D model thumbnails and sharper cameo upscaling, the command
-wheel, a collapsible minimap, toasts and the left-handed option — see spec §6.5 / Phase C-2.
+wheel, a collapsible minimap, toasts and the left-handed option — see spec §6.8 / Phase C-2.

@@ -89,6 +89,11 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
   battle, skip a movie) instead of sending the whole game to the background, which an edge swipe
   during a battle did by accident. **Fixed** Back reaching the game as the letter K: SDL's
   consumer key codes (above 255) wrapped around in `SDL3Keyboard`'s 8-bit key table.
+- **Fixed** Back doing nothing in menus: the original game sends keys only to the focused window,
+  and after a tap nothing has focus. In a menu Back now goes to the screen on top (a dialog,
+  Options, or the shell's screen): its own ESC handling first, else its visible Back / Cancel /
+  No / OK button. So Back closes Solo Play, the difficulty list, Skirmish, Options and the LAN
+  lobby, and does nothing on the main menu itself.
 - **Added** the on‑screen **▶▶** cutscene Skip button (synthesizes `KEY_ESC`).
 - **Added** a persisted touch sensitivity control (repurposes Options→Scroll Speed for pan+zoom).
 - Disabled SDL's built‑in touch→mouse synthesis (set before `SDL_InitSubSystem`).

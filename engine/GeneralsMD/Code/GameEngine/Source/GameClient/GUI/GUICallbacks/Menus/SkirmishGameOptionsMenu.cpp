@@ -212,6 +212,13 @@ UnicodeString SkirmishPreferences::getUserName()
 
 	ret = QuotedPrintableToUnicodeString(it->second);
 	ret.trim();
+#if defined(__ANDROID__)
+	// @port Android: before the app published the phone's name (IPEnumeration::getMachineName),
+	// the default saved here was the hostname "localhost", the same on every phone. Treat it as
+	// no name so the phone's own name is used.
+	if (ret.compareNoCase(L"localhost") == 0)
+		ret.clear();
+#endif
 	if (ret.isEmpty())
 	{
 		IPEnumeration IPs;
@@ -1315,6 +1322,15 @@ void SkirmishGameOptionsMenuInit( WindowLayout *layout, void *userData )
 	TheSkirmishGameInfo->setSlot(1, gSlot);
 
 	ParseAsciiStringToGameInfo(TheSkirmishGameInfo, prefs.getSlotList());
+#if defined(__ANDROID__)
+	// @port Android: the saved slot list carries the player's name too, which brought back the old
+	// "localhost" default. Keep the name chosen above (SkirmishPreferences::getUserName).
+	if (GameSlot *localSlot = TheSkirmishGameInfo->getSlot(0))
+	{
+		if (localSlot->isHuman())
+			localSlot->setName(prefs.getUserName());
+	}
+#endif
 	TheSkirmishGameInfo->setSeed(GetTickCount());
 
 	UnsignedInt isPreorder = 0;

@@ -68,6 +68,8 @@
 #include "GameClient/VideoPlayer.h"
 #include <jni.h>   // density + haptics come from ZerohourActivity via SDL_GetAndroidJNIEnv()
 #include "GameClient/GadgetComboBox.h"   // smart touch: a dropdown's text part opens its list through the arrow button
+#include "GameClient/Shell.h"            // Back in menus: the screen on top of the shell
+#include "GameClient/WindowLayout.h"
 #endif
 
 // Extern globals for input devices (set by GameClient)
@@ -1143,6 +1145,105 @@ void touchFrame() {
 	settleZoom(dt);
 }
 
+// ------------------------------------------------------------------- Back in menus --
+// The Back button / gesture reaches the game as ESC (SDL3Keyboard::getKey), which opens the pause
+// menu in a battle and skips a movie. In menus it did nothing: the original game hands keys only
+// to the window with the keyboard focus, and after a tap nothing has it, so the menu never saw the
+// ESC. In a menu, Back now goes to the screen on top directly: first the screen's own ESC handling
+// (most screens press their Back button on ESC), else its visible Back / Cancel / No / OK button.
+
+// The screen Back acts on: a modal dialog, else the Options screen, else the shell's top screen.
+// None in a battle (unless a dialog or Options is up) or during a movie: ESC handles those.
+WindowLayout *backLayout(GameWindow *&modal) {
+	modal = nullptr;
+	if (!TheWindowManager || videoPlaying()) return nullptr;
+	modal = TheWindowManager->winGetModalWindow();
+	if (modal) return nullptr;
+	if (!TheShell) return nullptr;
+	WindowLayout *options = TheShell->getOptionsLayout(FALSE);
+	if (options && !options->isHidden()) return options;
+	if (inLiveGame()) return nullptr;
+	WindowLayout *top = TheShell->top();
+	return (top && !top->isHidden()) ? top : nullptr;
+}
+inline bool hasBackScreen() {
+	GameWindow *modal; WindowLayout *layout = backLayout(modal);
+	return modal != nullptr || layout != nullptr;
+}
+
+// Back-like button names, best first ("MainMenu.wnd:ButtonSingleBack", "MessageBox.wnd:ButtonNo").
+const char *const BACK_BUTTON_SUFFIXES[] = { "Back", "Cancel", "No", "Ok", "OK" };
+const int BACK_BUTTON_KINDS = sizeof(BACK_BUTTON_SUFFIXES) / sizeof(BACK_BUTTON_SUFFIXES[0]);
+
+int backButtonRank(GameWindow *w) {
+	const AsciiString &decorated = w->winGetInstanceData()->m_decoratedNameString;
+	const char *name = strrchr(decorated.str(), ':');
+	name = name ? name + 1 : decorated.str();
+	if (strncmp(name, "Button", 6) != 0) return -1;
+	const size_t len = strlen(name);
+	for (int i = 0; i < BACK_BUTTON_KINDS; ++i) {
+		const size_t n = strlen(BACK_BUTTON_SUFFIXES[i]);
+		if (len >= 6 + n && strcmp(name + len - n, BACK_BUTTON_SUFFIXES[i]) == 0) return i;
+	}
+	return -1;
+}
+// Depth-first over a window and its children; hidden or disabled windows and what is below them
+// can't be pressed, as in the tap hit test.
+void findBackButton(GameWindow *w, GameWindow *&best, int &bestRank) {
+	const UnsignedInt st = w->winGetStatus();
+	if (BitIsSet(st, WIN_STATUS_HIDDEN) || !BitIsSet(st, WIN_STATUS_ENABLED)) return;
+	if (BitIsSet(w->winGetInstanceData()->getStyle(), GWS_PUSH_BUTTON)) {
+		const int rank = backButtonRank(w);
+		if (rank >= 0 && (best == nullptr || rank < bestRank)) { best = w; bestRank = rank; }
+	}
+	for (GameWindow *c = w->winGetChild(); c; c = c->winGetNext()) findBackButton(c, best, bestRank);
+}
+
+// A full ESC press (down, then up) for one window's own key handling. True if it took the key.
+bool sendEscTo(GameWindow *w) {
+	const WindowMsgHandledType down = TheWindowManager->winSendInputMsg(w, GWM_CHAR, KEY_ESC, KEY_STATE_DOWN);
+	const WindowMsgHandledType up = TheWindowManager->winSendInputMsg(w, GWM_CHAR, KEY_ESC, KEY_STATE_UP);
+	return down == MSG_HANDLED || up == MSG_HANDLED;
+}
+
+// Back pressed in a menu: true if the screen on top did something with it.
+bool menuBack() {
+	GameWindow *modal;
+	WindowLayout *layout = backLayout(modal);
+	GameWindow *best = nullptr;
+	int bestRank = BACK_BUTTON_KINDS;
+	if (modal) {
+		if (sendEscTo(modal)) return true;
+		findBackButton(modal, best, bestRank);
+	} else if (layout) {
+		for (GameWindow *w = layout->getFirstWindow(); w; w = w->winGetNextInLayout())
+			if (sendEscTo(w)) return true;
+		for (GameWindow *w = layout->getFirstWindow(); w; w = w->winGetNextInLayout())
+			findBackButton(w, best, bestRank);
+	}
+	if (!best) return false;
+	// Exactly what a tap on the button sends to its owner (GadgetPushButtonInput, GBM_SELECTED).
+	TheWindowManager->winSendSystemMsg(best->winGetInstanceData()->getOwner(), GBM_SELECTED,
+		(WindowMsgData)best, best->winGetWindowId());
+	fprintf(stderr, "INFO: [Back] pressed %s\n", best->winGetInstanceData()->m_decoratedNameString.str());
+	return true;
+}
+
+// Called for every Back key event. In a menu the press is ours: the down is swallowed and the up
+// does menuBack(); returns true when the event must not reach the keyboard. Anywhere else (a
+// battle, a movie) both go on to the keyboard as ESC.
+bool g_backInMenu = false;
+bool handleBackKey(bool down) {
+	if (down) {
+		g_backInMenu = hasBackScreen();
+		return g_backInMenu;
+	}
+	if (!g_backInMenu) return false;
+	g_backInMenu = false;
+	if (!menuBack()) fprintf(stderr, "INFO: [Back] nothing to go back to on this screen\n");
+	return true;
+}
+
 } // namespace
 #endif // __ANDROID__
 
@@ -1351,6 +1452,13 @@ void SDL3GameEngine::pollSDL3Events(void)
 
 			case SDL_EVENT_KEY_DOWN:
 			case SDL_EVENT_KEY_UP:
+#if defined(__ANDROID__)
+				// Back in a menu goes to the screen on top (handleBackKey); in a battle or a movie it
+				// stays ESC for the keyboard.
+				if (event.key.scancode == SDL_SCANCODE_AC_BACK && !event.key.repeat
+					&& handleBackKey(event.type == SDL_EVENT_KEY_DOWN))
+					break;
+#endif
 				// Fighter19 pattern: direct addSDLEvent() call
 				// GeneralsX @refactor felipebraz 16/02/2026 Simplified event routing
 				if (TheKeyboard) {

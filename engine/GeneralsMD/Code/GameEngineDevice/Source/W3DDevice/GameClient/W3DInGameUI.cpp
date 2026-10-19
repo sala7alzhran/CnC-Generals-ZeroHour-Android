@@ -630,7 +630,12 @@ namespace {
 		if( command != s_nameCommand )
 		{
 			s_nameCommand = command;
-			s_nameText->setText( TheGameText->fetch( command->getTextLabel() ) );
+			const UnicodeString raw = TheGameText->fetch( command->getTextLabel() );
+			UnicodeString clean;
+			for( Int i = 0; i < raw.getLength(); ++i )
+				if( raw.getCharAt( i ) != L'&' )   // the '&' marks the PC hotkey letter
+					clean.concat( raw.getCharAt( i ) );
+			s_nameText->setText( clean );
 		}
 		AndroidHud::Rect drawer;
 		if( !TheControlBar->getPhoneDrawerRect( drawer ) )

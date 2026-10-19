@@ -355,4 +355,117 @@ GameMessageDisposition PlaceEventTranslator::translateGameMessage(const GameMess
 	return disp;
 }
 
+#if defined(__ANDROID__)
+#include <cstdio>
+//-------------------------------------------------------------------------------------------------
+/** GeneralsX @feature Android touch placement 19/10/2026 (docs/MOBILE-UX-SPEC.md §6.4)
+	* The PC anchors a pending structure on the raw mouse-down and places it on the click message that
+	* follows the mouse-up, both routed through the window layer first. On the phone a tap does both
+	* steps here, called by the touch layer, so placement cannot depend on what the window layer makes
+	* of a synthesized press. The checks and the order sent are the same as translateGameMessage()'s. */
+//-------------------------------------------------------------------------------------------------
+Bool AndroidPlacementTap( const ICoord2D &screen )
+{
+	const ThingTemplate *build = TheInGameUI ? TheInGameUI->getPendingPlaceType() : nullptr;
+	if( !build || !TheTacticalView || !TheGameLogic || !TheMessageStream || !TheBuildAssistant )
+		return FALSE;
 
+	ICoord2D mouse = screen;
+	Coord3D world;
+	if( !TheTacticalView->screenToTerrain( &mouse, &world ) )
+	{
+		fprintf( stderr, "ANDROID placement: tap (%d,%d) is off the terrain\n", screen.x, screen.y );
+		return FALSE;
+	}
+
+	Object *builderObj = TheGameLogic->findObjectByID( TheInGameUI->getPendingPlaceSourceObjectID() );
+	if( !builderObj )
+	{
+		// the builder is gone: cancel the whole placement, as the PC does on its mouse-down
+		TheInGameUI->placeBuildAvailable( nullptr, nullptr );
+		return FALSE;
+	}
+
+	TheInGameUI->setRadiusCursorNone();
+	TheInGameUI->setPlacementStart( &mouse );
+	const Real angle = TheInGameUI->getPlacementAngle();
+	const Bool isLineBuild = TheBuildAssistant->isLineBuildTemplate( build );
+
+	const CanMakeType cmt = TheBuildAssistant->canMakeUnit( builderObj, build );
+	if( cmt != CANMAKE_OK )
+	{
+		TheInGameUI->setPlacementStart( nullptr );
+		if( cmt == CANMAKE_NO_MONEY )
+		{
+			TheEva->setShouldPlay( EVA_InsufficientFunds );
+			TheInGameUI->message( "GUI:NotEnoughMoneyToBuild" );
+		}
+		else if( cmt == CANMAKE_QUEUE_FULL )
+			TheInGameUI->message( "GUI:ProductionQueueFull" );
+		else if( cmt == CANMAKE_PARKING_PLACES_FULL )
+			TheInGameUI->message( "GUI:ParkingPlacesFull" );
+		else if( cmt == CANMAKE_MAXED_OUT_FOR_PLAYER )
+			TheInGameUI->message( "GUI:UnitMaxedOut" );
+		else
+			TheInGameUI->placeBuildAvailable( nullptr, nullptr );
+		fprintf( stderr, "ANDROID placement: cannot make %s (%d)\n", build->getName().str(), (Int)cmt );
+		return FALSE;
+	}
+
+	const LegalBuildCode lbc = TheBuildAssistant->isLocationLegalToBuild( &world,
+																																				build,
+																																				angle,
+																																				BuildAssistant::USE_QUICK_PATHFIND |
+																																				BuildAssistant::TERRAIN_RESTRICTIONS |
+																																				BuildAssistant::CLEAR_PATH |
+																																				BuildAssistant::NO_OBJECT_OVERLAP |
+																																				BuildAssistant::SHROUD_REVEALED |
+																																				BuildAssistant::IGNORE_STEALTHED |
+																																				BuildAssistant::FAIL_STEALTHED_WITHOUT_FEEDBACK,
+																																				builderObj, nullptr );
+	if( lbc != LBC_OK )
+	{
+		// can't place: say why, and unhook the anchor so the next tap tries again
+		TheInGameUI->displayCantBuildMessage( lbc );
+		AudioEventRTS sound = *builderObj->getTemplate()->getPerUnitSound( "VoiceNoBuild" );
+		sound.setObjectID( builderObj->getID() );
+		TheAudio->addAudioEvent( &sound );
+		static AudioEventRTS noCanDoSound( "NoCanDoSound" );
+		TheAudio->addAudioEvent( &noCanDoSound );
+		TheInGameUI->setPlacementStart( nullptr );
+		fprintf( stderr, "ANDROID placement: tap (%d,%d) is not a legal spot for %s (%d)\n", screen.x, screen.y, build->getName().str(), (Int)lbc );
+		return FALSE;
+	}
+
+	GameMessage *placeMsg = nullptr;
+	ProductionUpdateInterface *puInterface = builderObj->getProductionUpdateInterface();
+	const CommandButton *specialButton = puInterface ? puInterface->getSpecialPowerConstructionCommandButton() : nullptr;
+	if( specialButton )
+	{
+		// a structure the special-power system creates (the sneak attack tunnel), no dozer involved
+		placeMsg = TheMessageStream->appendMessage( GameMessage::MSG_DO_SPECIAL_POWER_AT_LOCATION );
+		placeMsg->appendIntegerArgument( specialButton->getSpecialPowerTemplate()->getID() );
+		placeMsg->appendLocationArgument( world );
+		placeMsg->appendRealArgument( angle );
+		placeMsg->appendObjectIDArgument( INVALID_ID );
+		placeMsg->appendIntegerArgument( specialButton->getOptions() );
+		placeMsg->appendObjectIDArgument( builderObj->getID() );
+	}
+	else
+	{
+		placeMsg = TheMessageStream->appendMessage( isLineBuild ? GameMessage::MSG_DOZER_CONSTRUCT_LINE : GameMessage::MSG_DOZER_CONSTRUCT );
+		placeMsg->appendIntegerArgument( build->getTemplateID() );
+		placeMsg->appendLocationArgument( world );
+		placeMsg->appendRealArgument( angle );
+		if( isLineBuild )
+			placeMsg->appendLocationArgument( world );   // a tap has no drag: a line of one segment
+		pickAndPlayUnitVoiceResponse( TheInGameUI->getAllSelectedDrawables(), placeMsg->getType() );
+	}
+	fprintf( stderr, "ANDROID placement: %s at (%.0f,%.0f)\n", build->getName().str(), world.x, world.y );
+
+	// out of placement mode; this also clears the anchor and removes the ghost
+	TheInGameUI->placeBuildAvailable( nullptr, nullptr );
+	TheInGameUI->clearAttackMoveToMode();
+	return TRUE;
+}
+#endif // __ANDROID__

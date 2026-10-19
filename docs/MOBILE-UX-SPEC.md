@@ -251,6 +251,11 @@ the radar frame when there is no radar.
 - **Touch layer**: overlay buttons are armed on press and fire on release over them (groups: hold =
   assign); the drawer footprint and the strip band swallow taps that find no window; everything else
   is unchanged from Phase A.
+- **Placing a structure**: a tap on the battlefield while a structure is pending anchors and places
+  it in one step through the engine's own placement checks (`AndroidPlacementTap`, the same
+  construct order the PC sends), after moving the ghost there; camera gestures stay live while
+  placing, a long press is not a box-select, a two-finger tap cancels. The PC's popup description is
+  not shown (the name label replaces it).
 - The **tactical view is always full height** on Android (`setScaledViewportHeight` → full), and
   `ShowControlBar` / `HideControlBar` / the powers-bar animation are immediate.
 - Nothing allocates per frame or per event: text objects (labels, badges, cost pills, the name) are

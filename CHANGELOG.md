@@ -73,6 +73,16 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
   CSF showing as `MISSING: '…'` (now a name made from the key, e.g. "Custom Mission"), and the
   per‑frame `D3DRS_PATCHSEGMENTS` DXVK warning that grew `ccg_log.txt` by ~13 KB/s (the state is
   not set on Android).
+- **Fixed** building placement on the phone: a tap on the ground showed the ghost but never
+  placed it. The PC anchors on the mouse‑down and places on the click message, both routed through
+  the window layer first; on Android a tap while a structure is pending now anchors and places
+  directly through the engine's own placement checks and sends the same construct order
+  (`AndroidPlacementTap`). Camera drag and pinch keep working while placing; a two‑finger tap still
+  cancels. The PC's popup description (laid out for the 4:3 bar) is no longer shown on the phone.
+- **Fixed** the command drawer updating late: the drawer pass now runs at the top of the control
+  bar's update, which returns early while nothing is selected. Taps on the battlefield release
+  after 40 ms instead of 150 ms, so selecting a unit feels immediate. The touched tile's name no
+  longer shows the `&` hotkey marker.
 
 ## Audio
 - **Fixed** total silence: `SDL3Main.cpp` forced desktop OpenAL drivers on Android (`__linux__`

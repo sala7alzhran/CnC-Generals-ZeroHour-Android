@@ -70,6 +70,7 @@
 #include "GameClient/AndroidHud.h"   // phone HUD geometry, shared with the layout and the draw side
 #include "GameClient/ControlBar.h"   // phone HUD state: which overlay buttons exist, the drawer's footprint
 #include "GameClient/GadgetComboBox.h"   // smart touch: a dropdown's text part opens its list through the arrow button
+#include "GameClient/PlaceEventTranslator.h"   // touch placement: a tap anchors and places the pending structure
 #include "Common/MessageStream.h"    // meta commands the overlay buttons send
 #endif
 
@@ -174,6 +175,7 @@ namespace {
 // ------------------------------------------------------------------ tuning --
 const Uint64 TAP_DEFER_MS        = 45;      // classic mode: defer left-down this long to catch a 2nd finger
 const Uint64 CLICK_HOLD_MS       = 150;     // minimum synthesized press duration (the GUI needs it, see below)
+const Uint64 WORLD_CLICK_HOLD_MS = 40;      // a battlefield tap only needs its down and up in different frames
 const Uint64 TWO_TAP_MAX_MS      = 300;     // 2-finger press shorter than this w/o move = right-click
 const Uint64 LONG_PRESS_NS       = 350ull * 1000000ull;  // stationary press that arms box-select
 const Uint64 DOUBLE_TAP_NS       = 300ull * 1000000ull;  // second tap within this = double click
@@ -268,6 +270,11 @@ inline bool inLiveGame() {
 inline bool videoPlaying() {
 	return (TheVideoPlayer && TheVideoPlayer->firstStream() != NULL)
 	    || (TheDisplay && TheDisplay->isMoviePlaying());
+}
+// A structure is waiting to be placed: the ghost follows the finger, a tap places it, the camera
+// gestures keep working, and a two-finger tap (right click) cancels.
+inline bool placingBuilding() {
+	return TheInGameUI && TheInGameUI->getPendingPlaceType() != nullptr;
 }
 // Overlay buttons are live only while playing, while the pause menu is NOT already up, and
 // NOT during a cutscene (then the Skip button takes over). Matches W3DInGameUI.cpp's draw gate.
@@ -447,16 +454,16 @@ void synthLeftDown(float x, float y, Uint8 clicks = 1) {
 }
 // Release a held left button, guaranteeing >= CLICK_HOLD_MS of total press so
 // the GUI registers the click. Long presses/drags release immediately.
-void releaseLeftHeld(float x, float y) {
-	Uint64 due = g_leftDownSynthMs + CLICK_HOLD_MS;
+void releaseLeftHeld(float x, float y, Uint64 holdMs = CLICK_HOLD_MS) {
+	Uint64 due = g_leftDownSynthMs + holdMs;
 	if (SDL_GetTicks() >= due) synthButton(SDL_BUTTON_LEFT, false, x, y);
 	else                       queueUpAt(SDL_BUTTON_LEFT, x, y, due);
 	g_leftHeld = false;
 }
 // A complete left click (or double click) at a point: press now, release after the hold.
-inline void synthClick(float x, float y, Uint8 clicks) {
+inline void synthClick(float x, float y, Uint8 clicks, Uint64 holdMs = CLICK_HOLD_MS) {
 	synthLeftDown(x, y, clicks);
-	releaseLeftHeld(x, y);
+	releaseLeftHeld(x, y, holdMs);
 }
 inline void rightClick(float x, float y) {
 	synthMotion(x, y);
@@ -776,11 +783,12 @@ bool hudDeadZoneAt(float px, float py) {
 	return TheControlBar->getPhoneDrawerRect(drawer) && drawer.contains(s.x, s.y);
 }
 
-// Camera mode: a finger that comes down on the battlefield itself (not on a HUD window, not
-// while placing a building, not in a cutscene or the pause menu) drives the camera.
+// Camera mode: a finger that comes down on the battlefield itself (not on a HUD window, not in a
+// cutscene or the pause menu) drives the camera. While a structure is being placed the camera
+// still works; the tap itself places (cameraTap).
 bool cameraModeAt(float px, float py) {
 	if (!inLiveGame() || videoPlaying()) return false;
-	if (TheInGameUI && (TheInGameUI->isQuitMenuVisible() || TheInGameUI->getPendingPlaceType() != nullptr)) return false;
+	if (TheInGameUI && TheInGameUI->isQuitMenuVisible()) return false;
 	return !windowOwnsPoint(px, py);
 }
 
@@ -898,6 +906,17 @@ inline void clampInsideEdges(float &px, float &py) {
 
 // A camera-mode tap: a left click, or a left double click when it follows another tap closely.
 void cameraTap(float x, float y, Uint64 now) {
+	if (placingBuilding()) {
+		// Place the pending structure here. The PC anchors on the mouse-down and places on the click
+		// message, both after the window layer has had its say; the phone does both steps directly
+		// (AndroidPlacementTap), so a placement tap cannot be lost on the way. The motion first moves
+		// the engine's ghost to the spot, which is what stays on screen when the spot is illegal.
+		synthMotion(x, y);
+		ICoord2D s; toEngine(x, y, s);
+		haptic(AndroidPlacementTap(s) ? HAPTIC_CLICK : HAPTIC_ERROR);
+		g_lastTapNs = 0;
+		return;
+	}
 	Uint8 clicks = 1;
 	if (g_lastTapNs != 0 && now - g_lastTapNs <= DOUBLE_TAP_NS && dist2D(x, y, g_lastTapX, g_lastTapY) <= mm(DOUBLE_TAP_MM)) {
 		clicks = 2;
@@ -905,7 +924,7 @@ void cameraTap(float x, float y, Uint64 now) {
 	} else {
 		g_lastTapNs = now; g_lastTapX = x; g_lastTapY = y;
 	}
-	synthClick(x, y, clicks);
+	synthClick(x, y, clicks, WORLD_CLICK_HOLD_MS);   // the world needs no GUI-length press
 }
 
 void endPrimary() {
@@ -1125,7 +1144,8 @@ void handleFingerUp(const SDL_TouchFingerEvent &tf) {
 			startFling(px, py, now);
 			break;
 		case PM_CAM_ARMED:
-			synthClick(g_pSX, g_pSY, 1);    // long-press without a drag: just a (slow) tap
+			if (placingBuilding()) cameraTap(g_pSX, g_pSY, now);   // a slow tap still places
+			else synthClick(g_pSX, g_pSY, 1, WORLD_CLICK_HOLD_MS);    // long-press without a drag: just a (slow) tap
 			break;
 		case PM_CAM_BOX:
 			clampInsideEdges(px, py);
@@ -1151,8 +1171,8 @@ void touchTick() {
 			g_leftPending = false;
 		}
 	}
-	if (g_pm == PM_CAM_PENDING && g_tfCount == 1 && SDL_GetTicksNS() - g_pDownNs >= LONG_PRESS_NS) {
-		g_pm = PM_CAM_ARMED;
+	if (g_pm == PM_CAM_PENDING && g_tfCount == 1 && !placingBuilding() && SDL_GetTicksNS() - g_pDownNs >= LONG_PRESS_NS) {
+		g_pm = PM_CAM_ARMED;   // (not while placing: a box-select press would anchor the structure)
 		haptic(HAPTIC_TICK);
 	}
 	if (g_overlayArmed >= 0 && !g_overlayLongFired && overlayIsGroup(g_overlayArmed)

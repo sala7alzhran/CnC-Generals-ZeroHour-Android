@@ -22,6 +22,21 @@ env:
   BUILD_TOOLS_PKG: build-tools;35.0.0
 
 jobs:
+  # Fast feedback on the Java side (a few minutes) while the native build below takes much longer.
+  app-java:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests + compile the app without native libraries
+        working-directory: android
+        run: ./gradlew --no-daemon testDebugUnitTest compileDebugJavaWithJavac
+
   build-apk:
     # Pinned (instead of ubuntu-latest) so a runner image upgrade can't silently change the host
     # toolchain (meson, glslang, cmake) under a working build.
@@ -159,9 +174,9 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Assemble debug APK
+      - name: Assemble debug APK + run unit tests
         working-directory: android
-        run: ./gradlew --no-daemon assembleDebug
+        run: ./gradlew --no-daemon assembleDebug testDebugUnitTest
 
       - name: Check APK contents
         run: |

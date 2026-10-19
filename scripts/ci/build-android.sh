@@ -32,7 +32,13 @@ build_dxvk() {
   git -C "$src" init -q
   git -C "$src" fetch -q --depth 1 "$DXVK_REPO" "$DXVK_COMMIT"
   git -C "$src" checkout -q FETCH_HEAD
-  git -C "$src" submodule update --init --recursive
+  # libdisplay-info lives on gitlab.freedesktop.org, which has outages; retry with backoff.
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    git -C "$src" submodule update --init --recursive && break
+    (( attempt < 5 )) || { echo "DXVK submodules could not be fetched" >&2; exit 1; }
+    sleep $(( 30 * attempt ))
+  done
   git -C "$src" apply "$ROOT/scripts/ci/dxvk-android.patch"
 
   if [[ ! -d "$sdl/include" ]]; then

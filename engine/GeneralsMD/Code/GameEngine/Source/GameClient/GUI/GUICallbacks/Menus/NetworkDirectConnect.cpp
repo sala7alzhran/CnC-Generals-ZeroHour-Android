@@ -43,6 +43,7 @@
 #include "GameClient/GadgetComboBox.h"
 #include "GameClient/GadgetTextEntry.h"
 #include "GameClient/GadgetStaticText.h"
+#include "GameClient/MessageBox.h"
 #include "GameClient/Shell.h"
 #include "GameClient/GameWindowTransitions.h"
 
@@ -62,6 +63,7 @@ extern Bool LANisShuttingDown;
 
 static Bool isShuttingDown = false;
 static Bool buttonPushed = false;
+static Bool directConnectNoNetwork = false;	///< GeneralsX @bugfix Android 19/10/2026 no local address was found on entry
 
 static NameKeyType buttonBackID = NAMEKEY_INVALID;
 static NameKeyType buttonHostID = NAMEKEY_INVALID;
@@ -261,6 +263,7 @@ void NetworkDirectConnectInit( WindowLayout *layout, void *userData )
 
 	buttonPushed = false;
 	isShuttingDown = false;
+	directConnectNoNetwork = false;
 	TheShell->showShellMap(TRUE);
 	buttonBackID = TheNameKeyGenerator->nameToKey( "NetworkDirectConnect.wnd:ButtonBack" );
 	buttonHostID = TheNameKeyGenerator->nameToKey( "NetworkDirectConnect.wnd:ButtonHost" );
@@ -304,37 +307,26 @@ void NetworkDirectConnectInit( WindowLayout *layout, void *userData )
 		TheLAN = NEW LANAPI();
 
 		OptionPreferences prefs;
-		UnsignedInt IP = prefs.getOnlineIPAddress();
+		UnsignedInt savedIP = prefs.getOnlineIPAddress();
 
+		// GeneralsX @bugfix Android 19/10/2026 Same choice as the LAN lobby: keep the saved Online IP while it
+		// exists, unless it is on a cellular or virtual interface while a Wi-Fi/hotspot, VPN or Ethernet one
+		// is available; otherwise the first address, the list being in order of preference.
 		IPEnumeration IPs;
+		UnsignedInt IP = IPs.getPreferredIP(savedIP);
 
-//		if (!IP)
-//		{
-			EnumeratedIP *IPlist = IPs.getAddresses();
-			DEBUG_ASSERTCRASH(IPlist, ("No IP addresses found!"));
-			if (!IPlist)
-			{
-				/// @todo: display error and exit lan lobby if no IPs are found
-			}
-
-			Bool foundIP = FALSE;
-			EnumeratedIP *tempIP = IPlist;
-			while ((tempIP != nullptr) && (foundIP == FALSE)) {
-				if (IP == tempIP->getIP()) {
-					foundIP = TRUE;
-				}
-				tempIP = tempIP->getNext();
-			}
-
-			if (foundIP == FALSE) {
-				// The IP that we had no longer exists, we need to pick a new one.
-				IP = IPlist->getIP();
-			}
-
-//			IP = IPlist->getIP();
-//		}
 		TheLAN->init();
-		TheLAN->SetLocalIP(IP);
+		if (IP == 0)
+		{
+			// GeneralsX @bugfix Android 19/10/2026 No local address at all: show the network error and go back
+			// (NetworkDirectConnectUpdate) instead of dereferencing an empty address list.
+			directConnectNoNetwork = TRUE;
+			fprintf(stderr, "INFO: [LAN] no local IPv4 address found, leaving Direct Connect\n");
+		}
+		else
+		{
+			TheLAN->SetLocalIP(IP);
+		}
 	}
 
 	UnsignedInt ip = TheLAN->GetLocalIP();
@@ -396,6 +388,15 @@ void NetworkDirectConnectUpdate( WindowLayout * layout, void *userData)
 	// We'll only be successful if we've requested to
 	if(isShuttingDown && TheShell->isAnimFinished() && TheTransitionHandler->isFinished())
 		shutdownComplete(layout);
+
+	// GeneralsX @bugfix Android 19/10/2026 No local address: the same error and way back as the LAN lobby.
+	if (directConnectNoNetwork && !isShuttingDown && !buttonPushed)
+	{
+		directConnectNoNetwork = false;
+		MessageBoxOk(TheGameText->fetch("GUI:NetworkError"), TheGameText->fetch("GUI:SocketError"), nullptr);
+		TheWindowManager->winSendSystemMsg(buttonBack->winGetParent(), GBM_SELECTED,
+																			 (WindowMsgData)buttonBack, buttonBackID);
+	}
 }
 
 //-------------------------------------------------------------------------------------------------

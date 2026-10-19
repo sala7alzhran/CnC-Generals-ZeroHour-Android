@@ -1073,10 +1073,11 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 	initLabelVersion();
 
 	// Choose an IP address, then initialize the IP combo box
-	UnsignedInt selectedIP = pref->getLANIPAddress();
-
 	UnicodeString str;
 	IPEnumeration IPs;
+	// GeneralsX @bugfix Android 19/10/2026 Preselect the address the LAN lobby will really use (the saved one
+	// is replaced when it sits on a cellular/virtual interface while Wi-Fi, VPN or Ethernet is available).
+	UnsignedInt selectedIP = IPs.getPreferredIP(pref->getLANIPAddress());
 	EnumeratedIP *IPlist = IPs.getAddresses();
 	Int index;
 	Int selectedIndex = -1;
@@ -1110,9 +1111,10 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 	// And now the GameSpy one
 	if (comboBoxOnlineIP)
 	{
-		UnsignedInt selectedIP = pref->getOnlineIPAddress();
 		UnicodeString str;
 		IPEnumeration IPs;
+		// GeneralsX @bugfix Android 19/10/2026 As for the LAN IP above (Direct Connect uses this one).
+		UnsignedInt selectedIP = IPs.getPreferredIP(pref->getOnlineIPAddress());
 		EnumeratedIP *IPlist = IPs.getAddresses();
 		Int index;
 		Int selectedIndex = -1;

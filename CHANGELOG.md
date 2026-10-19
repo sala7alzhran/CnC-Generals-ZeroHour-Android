@@ -108,6 +108,27 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
   on a re-import. The two "sizzle" promo videos (39 MB), which only play after the intro movies
   that Android skips, are no longer copied.
 
+## Multiplayer (LAN)
+- **Fixed** phones never seeing each other's LAN games: the lobby socket (UDP 8086) was bound to
+  the chosen address, and Linux/Android never deliver a broadcast to such a socket. On POSIX it
+  now listens on every interface (from upstream GeneralsX #201) and ignores its own broadcasts
+  coming back from another local address (from #346). Broadcasts still go to the chosen
+  interface's subnet only.
+- **Fixed** the LAN and Direct Connect address defaulting to the cellular one (`10.x`):
+  interfaces are listed Wi‑Fi/hotspot first (`wlan*`, `ap*`, `swlan*`, `softap*`), then VPN
+  (`tun*`, `zt*`), then Ethernet, with cellular and virtual links (`rmnet*`, `ccmni*`, `v4-*`,
+  `dummy*`, `p2p*`, …) last. An address saved in `Options.ini` that sits on a cellular/virtual
+  interface is replaced by the Wi‑Fi one; Options preselects the address really used. Docker/VM
+  bridges and links without a carrier are left out (from #307).
+- **Fixed** a crash entering the LAN lobby or Direct Connect with no local address; both now show
+  the game's network error and go back.
+- **Fixed** replies meant for one player (join answers, direct‑connect game info) also being
+  broadcast to the whole subnet. A joiner whose request left through another of its interfaces
+  now adopts the address the host knows it by (from #346).
+- **Added** a low‑latency Wi‑Fi lock while the game is in the foreground (no power‑save lag
+  spikes), and `INFO: [LAN]` lines in `ccg_log.txt`: the lobby's address, interface and broadcast
+  address, and the packets it receives (rate‑limited).
+
 ## In progress
-- LAN multiplayer between two Android devices (UDP discovery; `MulticastLock` held by the
-  Activity; `udp.cpp`, `LanLobbyMenu.cpp`).
+- LAN multiplayer between two Android devices: discovery and address fixes are in, not yet
+  verified on two phones.

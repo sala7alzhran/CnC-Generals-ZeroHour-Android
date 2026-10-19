@@ -1,3 +1,28 @@
 <resources>
     <string name="app_name">Generals Zero Hour</string>
+
+    <!-- First-run setup (SetupActivity) -->
+    <string name="setup_title">GENERALS ZERO HOUR</string>
+    <string name="setup_intro">This app needs your own copy of the game files.\n\n1. Copy your Zero Hour game folder from your PC to this phone (for example into Download). It is the folder that contains INIZH.big and the Data folder (on Steam: Command &amp; Conquer Generals - Zero Hour).\n2. Tap \"Choose game folder\" and pick that folder, or pick a .zip of it.</string>
+    <string name="setup_pick_folder">Choose game folder</string>
+    <string name="setup_pick_zip">Choose .zip file</string>
+    <string name="setup_start">Start game</string>
+    <string name="setup_scanning">Checking the game files…</string>
+    <!-- %1$s = file name, %2$s = amount done, %3$s = total -->
+    <string name="setup_copying">Copying game files…\n%1$s\n%2$s of %3$s</string>
+    <string name="setup_unzipping">Unpacking the zip…\n%1$s\n%2$s of %3$s</string>
+    <string name="setup_done">Game files installed (%1$s).\n\nYou can now delete the copy you put on the phone to free space.</string>
+    <string name="setup_err_missing">These game files are missing:\n%1$s\n\nPick the Zero Hour folder that contains INIZH.big and the Data folder.</string>
+    <string name="setup_err_missing_base">W3D.big, Textures.big and Terrain.big come from the original Generals game. On Steam they are in the ZH_Generals folder: copy the whole Zero Hour folder, including ZH_Generals.</string>
+    <string name="setup_err_no_root">No Zero Hour files found there (INIZH.big is missing). Pick the folder that contains INIZH.big and the Data folder.</string>
+    <string name="setup_err_space">Not enough free space: the game needs %1$s, but only %2$s is free.</string>
+    <string name="setup_err_disk_full">the phone storage is full</string>
+    <string name="setup_err_failed">Copying failed: %1$s\n\nTry again; files already copied are kept.</string>
+
+    <!-- Self-contained build: unpacking the bundled .pak parts -->
+    <string name="setup_installing">Installing game data…\nFirst launch only — please wait.</string>
+    <string name="setup_installing_parts">Installing game data…\n(%1$d parts, first launch only)</string>
+    <string name="setup_installing_progress">Installing game data…\n%1$d files, %2$d MB\n(first launch only)</string>
+    <string name="setup_install_failed">Install failed:\n%1$s\n(free space? reinstall?)</string>
+    <string name="setup_starting">Done — starting game…</string>
 </resources>

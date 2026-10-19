@@ -8,6 +8,25 @@ an install-and-play APK for your phone.
 > maps are Electronic Arts' copyright. Get them from your retail disc or a digital copy you bought
 > (e.g. the EA App / Origin "Command & Conquer: The Ultimate Collection"). Don't download them.
 
+## Easiest way: import the files inside the app
+
+The APK built by CI (Actions → **android-ci** → artifact `generals-zh-android-debug-apk`) contains
+no game data. On first launch it asks for your files:
+
+1. On the PC, copy your whole Zero Hour install folder to the phone over USB, e.g. into `Download/`
+   (Steam: `steamapps\common\Command & Conquer Generals - Zero Hour`, including its `ZH_Generals`
+   subfolder). A `.zip` of that folder works too.
+2. Install the APK and open it. Tap **Choose game folder** (or **Choose .zip file**) and pick it.
+3. The app checks the files (it names anything missing), copies the `.big` archives, `Data/` and
+   `ZH_Generals/*.big` into its private storage with a progress bar, then shows **Start game**.
+4. After that you can delete the copy in `Download/`; the game no longer needs it.
+
+While importing you need free space for a second copy of the game folder; once you delete the copy in `Download/`, only the app's copy remains.
+
+The rest of this page is the older route: packing the data *into* the APK on a PC.
+
+---
+
 You need a **desktop PC** to prepare the files, the phone connected by USB (with USB debugging on),
 and about **10 GB of free disk** on the PC while packaging.
 

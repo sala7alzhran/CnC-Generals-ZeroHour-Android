@@ -1,0 +1,25 @@
+<resources>
+
+    <!-- First-run setup (SetupActivity) -->
+    <string name="setup_intro">يحتاج هذا التطبيق إلى ملفات اللعبة من نسختك الخاصة.\n\n1. انسخ مجلد لعبة Zero Hour من الكمبيوتر إلى هذا الهاتف (مثلاً إلى مجلد Download). هو المجلد الذي فيه الملف INIZH.big والمجلد Data (في Steam اسمه: Command &amp; Conquer Generals - Zero Hour).\n2. اضغط \"اختيار مجلد اللعبة\" واختر ذلك المجلد، أو اختر ملف .zip له.</string>
+    <string name="setup_pick_folder">اختيار مجلد اللعبة</string>
+    <string name="setup_pick_zip">اختيار ملف ‎.zip</string>
+    <string name="setup_start">ابدأ اللعب</string>
+    <string name="setup_scanning">جارٍ فحص ملفات اللعبة…</string>
+    <string name="setup_copying">جارٍ نسخ ملفات اللعبة…\n%1$s\n%2$s من %3$s</string>
+    <string name="setup_unzipping">جارٍ فك ضغط ملف zip…\n%1$s\n%2$s من %3$s</string>
+    <string name="setup_done">تم تثبيت ملفات اللعبة (%1$s).\n\nيمكنك الآن حذف النسخة التي وضعتها على الهاتف لتوفير المساحة.</string>
+    <string name="setup_err_missing">هذه الملفات ناقصة:\n%1$s\n\nاختر مجلد Zero Hour الذي فيه INIZH.big والمجلد Data.</string>
+    <string name="setup_err_missing_base">الملفات W3D.big و Textures.big و Terrain.big تأتي من لعبة Generals الأصلية. في Steam تجدها داخل المجلد ZH_Generals: انسخ مجلد Zero Hour كاملاً ومعه ZH_Generals.</string>
+    <string name="setup_err_no_root">لم يتم العثور على ملفات Zero Hour هنا (الملف INIZH.big غير موجود). اختر المجلد الذي فيه INIZH.big والمجلد Data.</string>
+    <string name="setup_err_space">لا توجد مساحة كافية: اللعبة تحتاج %1$s، والمساحة الفارغة %2$s فقط.</string>
+    <string name="setup_err_disk_full">ذاكرة الهاتف ممتلئة</string>
+    <string name="setup_err_failed">فشل النسخ: %1$s\n\nحاول مرة أخرى؛ الملفات التي نُسخت سابقاً تبقى محفوظة.</string>
+
+    <!-- Self-contained build: unpacking the bundled .pak parts -->
+    <string name="setup_installing">جارٍ تثبيت بيانات اللعبة…\nفي التشغيل الأول فقط — يرجى الانتظار.</string>
+    <string name="setup_installing_parts">جارٍ تثبيت بيانات اللعبة…\n(%1$d أجزاء، في التشغيل الأول فقط)</string>
+    <string name="setup_installing_progress">جارٍ تثبيت بيانات اللعبة…\n%1$d ملف، %2$d ميغابايت\n(في التشغيل الأول فقط)</string>
+    <string name="setup_install_failed">فشل التثبيت:\n%1$s\n(هل توجد مساحة كافية؟ أعد التثبيت)</string>
+    <string name="setup_starting">تم — جارٍ تشغيل اللعبة…</string>
+</resources>

@@ -364,12 +364,17 @@ float pxPerMm() {
 inline float mm(float millimetres) { return millimetres * pxPerMm(); }
 
 // ------------------------------------------------- synthesized mouse input --
+// The window the events claim to come from: SDL3Mouse::scaleMouseCoordinates maps window pixels
+// to the display's coordinates only for a known window, which matters whenever the game renders
+// below the screen resolution (Options > Resolution).
+inline SDL_WindowID synthWindowId() { return TheSDL3Window ? SDL_GetWindowID(TheSDL3Window) : 0; }
 void synthMotion(float x, float y) {
 	if (!TheMouse) return;
 	SDL3Mouse *m = dynamic_cast<SDL3Mouse*>(TheMouse); if (!m) return;
 	SDL_Event e; memset(&e, 0, sizeof(e));
 	e.type = SDL_EVENT_MOUSE_MOTION;
 	e.motion.timestamp = SDL_GetTicksNS();
+	e.motion.windowID = synthWindowId();
 	e.motion.x = x; e.motion.y = y;
 	m->addSDLEvent(&e);
 }
@@ -379,6 +384,7 @@ void synthButton(Uint8 button, bool down, float x, float y, Uint8 clicks = 1) {
 	SDL_Event e; memset(&e, 0, sizeof(e));
 	e.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
 	e.button.timestamp = SDL_GetTicksNS();
+	e.button.windowID = synthWindowId();
 	e.button.button = button;
 	e.button.down = down;
 	e.button.clicks = clicks;   // 2 on a down = double click (SDL3Mouse::translateButtonEvent)

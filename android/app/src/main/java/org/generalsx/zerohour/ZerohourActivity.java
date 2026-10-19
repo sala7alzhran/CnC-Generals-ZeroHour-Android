@@ -31,6 +31,17 @@ public class ZerohourActivity extends SDLActivity
         }
     }
 
+    // @port Android: the engine creates a resizable SDL window and sets no
+    // SDL_HINT_ORIENTATIONS, so SDL replaces the manifest's landscape lock with
+    // FULL_USER. A phone lying flat or held upright then rotates the surface to
+    // portrait while DXVK is creating its swapchain, and the swapchain cannot be
+    // recreated ("native_window_api_connect() failed ... already connected"), so
+    // the game exits on startup. Always request landscape, either way up.
+    @Override
+    public void setOrientationBis(int w, int h, boolean resizable, String hint) {
+        super.setOrientationBis(w, h, resizable, "LandscapeLeft LandscapeRight");
+    }
+
     @Override
     protected void onDestroy() {
         try {

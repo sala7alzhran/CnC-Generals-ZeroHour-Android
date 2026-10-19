@@ -412,7 +412,7 @@ void W3DInGameUI::reset()
 // (SDL3GameEngine.cpp), so draw, hit-test and layout cannot drift apart.
 extern Int TheAndroidOverlayPressed;   // the overlay the finger is holding down (-1: none); set by the touch layer
 namespace {
-	typedef AndroidHud::Rect HudRect;   // WWLib has a global HudRect too
+	typedef AndroidHud::Rect HudRect;   // WWLib's trect.h declares a global Rect, so not that name
 	namespace Palette = AndroidHud::Palette;
 
 	// Text objects live for the session and are re-set only when their content changes: nothing

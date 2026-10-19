@@ -679,13 +679,13 @@ void ControlBar::updatePhoneDrawer()
 	if( m_radarAttackGlowOn ) sig |= 1u << 27;
 	if( hidden ) sig |= 1u << 28;
 
-	const Bool open = !hidden && (anyCommand || portrait || queue || uc || ocl || beacon);
+	const Bool drawerOpen = !hidden && (anyCommand || portrait || queue || uc || ocl || beacon);
 	const UnsignedInt now = nowMs();
-	if( open && !m_phoneDrawerShown )
+	if( drawerOpen && !m_phoneDrawerShown )
 		m_phoneSlideStartMs = now;
-	m_phoneDrawerShown = open;
+	m_phoneDrawerShown = drawerOpen;
 	Int dx = 0;
-	if( open )
+	if( drawerOpen )
 	{
 		const UnsignedInt t = now - m_phoneSlideStartMs;
 		if( t < DRAWER_SLIDE_MS )

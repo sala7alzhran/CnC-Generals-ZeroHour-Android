@@ -42,11 +42,36 @@ The engine log (`ccg_log.txt`) shows the decision on lines starting with `[Graph
 
 ## Known GPU notes
 
-- **Mali-G57**: the big one — the Mali shader compiler crashes on Direct3D user clip planes
-  (`gl_ClipDistance`); the port disables them. See
-  [fixes/mali-shader-cmpbe-crash.md](fixes/mali-shader-cmpbe-crash.md).
-- **Adreno / PowerVR / Xclipse**: **untested.** They may not need the clip-plane workaround and
-  may have their own quirks. Reports (and fixes) welcome — see [../CONTRIBUTING.md](../CONTRIBUTING.md).
+- **Adreno 750** (POCO F7 Pro, Android 16): tested; it has every Vulkan feature DXVK uses, so none
+  of the fallbacks below are active.
+- **Mali and other GPUs missing DXVK features**: `scripts/ci/dxvk-android.patch` adds fallbacks.
+  Each one takes effect only when the GPU lacks the feature or runs the ARM driver:
+
+  | Missing on the phone | Fallback |
+  |---|---|
+  | `VK_EXT_robustness2` / `nullDescriptor` (Mali drivers before r53) | Unbound descriptor slots get zero-filled dummy images and buffers |
+  | `robustBufferAccess2`, `multiDrawIndirect` | Not enabled; indirect multi-draws and the HUD draw one at a time |
+  | `textureCompressionBC` (all Mali, PowerVR) | DXT formats are reported unsupported, so the engine decodes DXT textures on the CPU |
+  | `shaderClipDistance` (all Mali) | D3D user clip planes are left out of the shaders; the game doesn't use them |
+  | ARM proprietary driver | `OpKill` instead of demote-to-helper, and serialized pipeline creation (Mali compiler crashes) |
+
+  The log line `D3D9DeviceEx: Android workarounds: ...` in `ccg_log.txt` lists what is active.
+  These were tested on the Adreno 750 by faking the missing features (below), not yet on a real
+  Mali phone. See also [fixes/mali-shader-cmpbe-crash.md](fixes/mali-shader-cmpbe-crash.md).
+- **Not supported**: drivers that only offer Vulkan 1.1 (DXVK 2.6 needs 1.3). That covers older
+  Mali drivers (r34 and before), Adreno 610/618 and early Adreno 619 drivers, and PowerVR GE8320,
+  which also has no geometry shaders. A system update often brings a newer driver.
+
+### Testing the Mali fallbacks on a phone that has everything
+
+DXVK reads `dxvk.conf` from the app's files folder. To act like an older Mali driver:
+
+```bash
+adb shell "run-as org.generalsx.zerohour sh -c 'printf \"dxvk.fakeMissingFeatures = robustness2,mdi,clipdistance,bc,outputlayer\ndxvk.fakeArmDriver = True\n\" > files/dxvk.conf'"
+```
+
+For a Mali r53/r54 driver use `rba2,mdi,clipdistance,bc,outputlayer`. Delete `files/dxvk.conf` to
+go back. The log then shows `test overrides active` and the workaround line.
 
 ## Reporting a device
 

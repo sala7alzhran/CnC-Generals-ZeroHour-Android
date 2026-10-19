@@ -890,15 +890,23 @@ ControlBar::ControlBar()
 	m_isObserverCommandBar = FALSE;
 #if defined(__ANDROID__)
 	m_phoneLayoutDirty = TRUE;
-	m_phoneMetrics = AndroidHud::computeMetrics( 1, 1, 15.0f, FALSE );
+	m_phoneMetrics = AndroidHud::computeMetrics( 1, 1, 15.0f, FALSE, 0 );
 	m_phoneDrawerSignature = 0;
+	m_phonePowerSignature = 0;
+	m_phoneRows = 0;
 	m_phoneDrawerShown = FALSE;
 	m_phoneDrawerSlideDx = 0;
 	m_phoneSlideStartMs = 0;
 	m_phoneDrawerRect = AndroidHud::Rect{ 0, 0, 0, 0 };
 	for( Int c = 0; c < AndroidHud::GRID_CELLS; ++c )
 		m_phoneCellWindow[ c ] = nullptr;
-	m_phoneIdleWorkerButton = nullptr;
+	m_phoneTab = 0;
+	m_phonePage = 0;
+	for( Int t = 0; t < AndroidHud::NUM_TABS; ++t )
+		m_phoneTabCount[ t ] = 0;
+	m_phonePages = 1;
+	m_phoneMenuHasTabs = FALSE;
+	m_phoneBuilderMenu = FALSE;
 #endif
 	m_observerLookAtPlayer = nullptr;
 	m_observedPlayer = nullptr;
@@ -1001,6 +1009,9 @@ ControlBar::ControlBar()
 //-------------------------------------------------------------------------------------------------
 ControlBar::~ControlBar()
 {
+#if defined(__ANDROID__)
+	phoneReleaseText();
+#endif
 
 	if(m_scienceLayout)
 	{
@@ -1324,6 +1335,9 @@ void ControlBar::init()
 //-------------------------------------------------------------------------------------------------
 void ControlBar::reset()
 {
+#if defined(__ANDROID__)
+	phoneReleaseText();   // GeneralsX @feature Android smart HUD: the HUD's text objects are per game
+#endif
 	hideSpecialPowerShortcut();
 	// do not destroy the rally drawable, it will get destroyed with everything else during a reset
 	m_rallyPointDrawableID = INVALID_DRAWABLE_ID;

@@ -2910,6 +2910,159 @@ void W3DDisplay::drawRemainingRectClock(Int startX, Int startY, Int width, Int h
 }
 
 
+#if defined(__ANDROID__)
+// GeneralsX @feature Android smart HUD 19/10/2026 Round shapes for the phone HUD, added to the 2D
+// batch as triangle fans (the same path drawRectClock uses). Segment counts follow the radius so a
+// 1 mm corner is 4 segments and a 10 mm button about 40. Angles are turns clockwise from 12 o'clock.
+namespace
+{
+	inline Int arcSegments( Real radius, Real turns )
+	{
+		Int n = (Int)(turns * (radius * 0.9f + 6.0f) + 0.5f);
+		return n < 1 ? 1 : (n > 96 ? 96 : n);
+	}
+	inline Vector2 onCircle( Real cx, Real cy, Real r, Real turn )
+	{
+		const Real a = turn * 2.0f * WWMATH_PI;
+		return Vector2( cx + r * WWMath::Sin( a ), cy - r * WWMath::Cos( a ) );
+	}
+	const Vector2 kNoUV( 0.0f, 0.0f );
+}
+
+void W3DDisplay::drawFillTriangle( Int x0, Int y0, Int x1, Int y1, Int x2, Int y2, UnsignedInt color )
+{
+	setup2DRenderState( nullptr, DRAW_IMAGE_ALPHA, FALSE );
+	m_2DRender->Add_Tri( Vector2( x0, y0 ), Vector2( x1, y1 ), Vector2( x2, y2 ), kNoUV, kNoUV, kNoUV, color );
+	if( !m_isBatching )
+		m_2DRender->Render();
+}
+
+void W3DDisplay::drawFillCircle( Int centerX, Int centerY, Int radius, UnsignedInt color )
+{
+	if( radius <= 0 )
+		return;
+	setup2DRenderState( nullptr, DRAW_IMAGE_ALPHA, FALSE );
+	const Int n = arcSegments( (Real)radius, 1.0f );
+	const Vector2 c( centerX, centerY );
+	Vector2 prev = onCircle( centerX, centerY, radius, 0.0f );
+	for( Int i = 1; i <= n; ++i )
+	{
+		const Vector2 next = onCircle( centerX, centerY, radius, (Real)i / (Real)n );
+		m_2DRender->Add_Tri( c, prev, next, kNoUV, kNoUV, kNoUV, color );
+		prev = next;
+	}
+	if( !m_isBatching )
+		m_2DRender->Render();
+}
+
+void W3DDisplay::drawArc( Int centerX, Int centerY, Int radius, Real lineWidth, Real fromTurn, Real toTurn, UnsignedInt color )
+{
+	if( radius <= 0 || toTurn <= fromTurn || lineWidth <= 0.0f )
+		return;
+	if( toTurn - fromTurn > 1.0f )
+		toTurn = fromTurn + 1.0f;
+	setup2DRenderState( nullptr, DRAW_IMAGE_ALPHA, FALSE );
+	const Real rOut = (Real)radius + lineWidth * 0.5f;
+	const Real rIn  = (Real)radius - lineWidth * 0.5f;
+	const Int n = arcSegments( rOut, toTurn - fromTurn );
+	Vector2 pOut = onCircle( centerX, centerY, rOut, fromTurn );
+	Vector2 pIn  = onCircle( centerX, centerY, rIn > 0.0f ? rIn : 0.0f, fromTurn );
+	for( Int i = 1; i <= n; ++i )
+	{
+		const Real t = fromTurn + (toTurn - fromTurn) * (Real)i / (Real)n;
+		const Vector2 nOut = onCircle( centerX, centerY, rOut, t );
+		const Vector2 nIn  = onCircle( centerX, centerY, rIn > 0.0f ? rIn : 0.0f, t );
+		m_2DRender->Add_Tri( pIn, pOut, nOut, kNoUV, kNoUV, kNoUV, color );
+		m_2DRender->Add_Tri( pIn, nOut, nIn, kNoUV, kNoUV, kNoUV, color );
+		pOut = nOut;
+		pIn = nIn;
+	}
+	if( !m_isBatching )
+		m_2DRender->Render();
+}
+
+void W3DDisplay::drawFillRoundRect( Int startX, Int startY, Int width, Int height, Int radius, UnsignedInt color )
+{
+	if( width <= 0 || height <= 0 )
+		return;
+	const Int maxR = (width < height ? width : height) / 2;
+	if( radius > maxR )
+		radius = maxR;
+	if( radius <= 0 )
+	{
+		drawFillRect( startX, startY, width, height, color );
+		return;
+	}
+	setup2DRenderState( nullptr, DRAW_IMAGE_ALPHA, FALSE );
+	const Real x0 = startX, y0 = startY, x1 = startX + width, y1 = startY + height, r = radius;
+	// middle band, then the top and bottom bands between the corners
+	m_2DRender->Add_Rect( RectClass( x0, y0 + r, x1, y1 - r ), 0, 0, color );
+	m_2DRender->Add_Rect( RectClass( x0 + r, y0, x1 - r, y0 + r ), 0, 0, color );
+	m_2DRender->Add_Rect( RectClass( x0 + r, y1 - r, x1 - r, y1 ), 0, 0, color );
+	// the four corners as quarter fans: top-right, bottom-right, bottom-left, top-left
+	const Real cx[ 4 ] = { x1 - r, x1 - r, x0 + r, x0 + r };
+	const Real cy[ 4 ] = { y0 + r, y1 - r, y1 - r, y0 + r };
+	const Int n = arcSegments( r, 0.25f );
+	for( Int k = 0; k < 4; ++k )
+	{
+		const Real from = 0.25f * k;
+		const Vector2 c( cx[ k ], cy[ k ] );
+		Vector2 prev = onCircle( cx[ k ], cy[ k ], r, from );
+		for( Int i = 1; i <= n; ++i )
+		{
+			const Vector2 next = onCircle( cx[ k ], cy[ k ], r, from + 0.25f * (Real)i / (Real)n );
+			m_2DRender->Add_Tri( c, prev, next, kNoUV, kNoUV, kNoUV, color );
+			prev = next;
+		}
+	}
+	if( !m_isBatching )
+		m_2DRender->Render();
+}
+
+void W3DDisplay::drawOpenRoundRect( Int startX, Int startY, Int width, Int height, Int radius, Real lineWidth, UnsignedInt color )
+{
+	if( width <= 0 || height <= 0 || lineWidth <= 0.0f )
+		return;
+	const Int maxR = (width < height ? width : height) / 2;
+	if( radius > maxR )
+		radius = maxR;
+	if( radius <= 0 )
+	{
+		drawOpenRect( startX, startY, width, height, lineWidth, color );
+		return;
+	}
+	setup2DRenderState( nullptr, DRAW_IMAGE_ALPHA, FALSE );
+	const Real x0 = startX, y0 = startY, x1 = startX + width, y1 = startY + height, r = radius;
+	// the line is centred on the edge, as Add_Outline draws it
+	m_2DRender->Add_Line( Vector2( x0 + r, y0 ), Vector2( x1 - r, y0 ), lineWidth, color );
+	m_2DRender->Add_Line( Vector2( x1, y0 + r ), Vector2( x1, y1 - r ), lineWidth, color );
+	m_2DRender->Add_Line( Vector2( x1 - r, y1 ), Vector2( x0 + r, y1 ), lineWidth, color );
+	m_2DRender->Add_Line( Vector2( x0, y1 - r ), Vector2( x0, y0 + r ), lineWidth, color );
+	const Real cx[ 4 ] = { x1 - r, x1 - r, x0 + r, x0 + r };
+	const Real cy[ 4 ] = { y0 + r, y1 - r, y1 - r, y0 + r };
+	const Real rOut = r + lineWidth * 0.5f, rIn = r - lineWidth * 0.5f > 0.0f ? r - lineWidth * 0.5f : 0.0f;
+	const Int n = arcSegments( rOut, 0.25f );
+	for( Int k = 0; k < 4; ++k )
+	{
+		const Real from = 0.25f * k;
+		Vector2 pOut = onCircle( cx[ k ], cy[ k ], rOut, from );
+		Vector2 pIn  = onCircle( cx[ k ], cy[ k ], rIn, from );
+		for( Int i = 1; i <= n; ++i )
+		{
+			const Real t = from + 0.25f * (Real)i / (Real)n;
+			const Vector2 nOut = onCircle( cx[ k ], cy[ k ], rOut, t );
+			const Vector2 nIn  = onCircle( cx[ k ], cy[ k ], rIn, t );
+			m_2DRender->Add_Tri( pIn, pOut, nOut, kNoUV, kNoUV, kNoUV, color );
+			m_2DRender->Add_Tri( pIn, nOut, nIn, kNoUV, kNoUV, kNoUV, color );
+			pOut = nOut;
+			pIn = nIn;
+		}
+	}
+	if( !m_isBatching )
+		m_2DRender->Render();
+}
+#endif // __ANDROID__
+
 // W3DDisplay::drawImage ======================================================
 /** Draws an images at the screen coordinates and keeps it within the end
 	* screen coords specified */

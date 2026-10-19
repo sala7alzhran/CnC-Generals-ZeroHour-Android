@@ -61,6 +61,9 @@ public class GameDataLayoutTest {
         assertFalse(GameDataLayout.shouldImport("generals.exe"));
         assertFalse(GameDataLayout.shouldImport("ZH_Generals/Data/Movies/a.bik"));
         assertFalse(GameDataLayout.shouldImport("Other/INIZH.big"));
+        assertFalse(GameDataLayout.shouldImport("Data/English/Movies/sizzle_review.bik"));
+        assertFalse(GameDataLayout.shouldImport("Data/English/Movies/Sizzle_Review640.bik"));
+        assertTrue(GameDataLayout.shouldImport("Data/English/Movies/MD_USA01_0.bik"));
     }
 
     @Test public void findsTheShallowestInstallRoot() {

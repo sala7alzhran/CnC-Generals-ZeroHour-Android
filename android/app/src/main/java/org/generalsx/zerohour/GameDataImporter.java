@@ -10,6 +10,7 @@ import android.provider.OpenableColumns;
 
 import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
@@ -17,6 +18,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Properties;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -40,9 +43,14 @@ final class GameDataImporter {
         ImportException(String message) { super(message); }
     }
 
-    /** Free space kept in reserve beyond the game data (engine logs, saves, DXVK cache). */
-    private static final long SPACE_MARGIN = 200L << 20;
+    /**
+     * Free space kept in reserve beyond the game data: engine logs, saves, the DXVK cache, and one
+     * archive's worth of room while its sounds are being re-encoded.
+     */
+    private static final long SPACE_MARGIN = 320L << 20;
     private static final String ZIP_STAGING = ".import-zip";
+    /** Archives already shrunk by {@link BigAudioCompactor}: relative path = size of the original. */
+    private static final String COMPACT_LOG = ".compacted";
 
     private final Context mContext;
     private final ContentResolver mResolver;
@@ -98,28 +106,40 @@ final class GameDataImporter {
         for (Doc d : files) rels.add(d.rel);
         checkComplete(rels);
 
+        Properties compacted = loadCompactLog();
         List<Doc> toCopy = new ArrayList<>();
+        List<String> imported = new ArrayList<>();
         long total = 0, pending = 0;
         for (Doc d : files) {
             if (!GameDataLayout.shouldImport(d.rel)) continue;
             toCopy.add(d);
+            imported.add(d.rel);
             total += d.size;
-            File out = new File(mDest, d.rel);
-            if (!(out.isFile() && out.length() == d.size)) pending += d.size;
+            if (!alreadyInstalled(compacted, d.rel, d.size)) pending += d.size;
         }
         checkSpace(pending);
 
         long done = 0;
         for (Doc d : toCopy) {
+            if (alreadyInstalled(compacted, d.rel, d.size)) { done += d.size; continue; }
             File out = new File(mDest, d.rel);
-            if (out.isFile() && out.length() == d.size) { done += d.size; continue; }
+            compacted.remove(d.rel);
             Uri uri = DocumentsContract.buildDocumentUriUsingTree(tree, d.id);
             try (InputStream in = mResolver.openInputStream(uri)) {
                 if (in == null) throw new IOException("cannot open " + d.rel);
                 done = writeFile(in, out, d.rel, R.string.setup_copying, done, total);
             }
         }
-        return total;
+        saveCompactLog(compacted);
+        return compactSounds(imported);
+    }
+
+    /** A file is in place if it was copied whole, or copied and then shrunk by the compactor. */
+    private boolean alreadyInstalled(Properties compacted, String rel, long sourceSize) {
+        File out = new File(mDest, rel);
+        if (!out.isFile()) return false;
+        if (out.length() == sourceSize) return true;
+        return String.valueOf(sourceSize).equals(compacted.getProperty(rel));
     }
 
     private void collectFiles(Uri tree, Doc dir, List<Doc> out) throws IOException {
@@ -195,6 +215,7 @@ final class GameDataImporter {
         }
 
         long total = 0;
+        List<String> imported = new ArrayList<>();
         File stagedRoot = new File(staging, root);
         for (String rel : underRoot) {
             if (!GameDataLayout.shouldImport(rel)) continue;
@@ -204,9 +225,13 @@ final class GameDataImporter {
             if (to.exists() && !to.delete()) throw new IOException("cannot replace " + rel);
             if (!from.renameTo(to)) throw new IOException("cannot move " + rel);
             total += to.length();
+            imported.add(rel);
         }
         deleteTree(staging);
-        return total;
+        Properties compacted = loadCompactLog();
+        for (String rel : imported) compacted.remove(rel);   // freshly unpacked: not shrunk yet
+        saveCompactLog(compacted);
+        return compactSounds(imported);
     }
 
     private void writeEntry(InputStream in, File out, String rel, CountingInputStream counted,
@@ -254,6 +279,67 @@ final class GameDataImporter {
             long s = super.skip(n);
             count += s;
             return s;
+        }
+    }
+
+    // ---- sound compaction ----------------------------------------------------------------------
+
+    /**
+     * Re-encodes the uncompressed sounds inside the imported .big archives (about 400 MB less on
+     * the phone). Archives already done are skipped, so an interrupted import resumes. Returns
+     * the number of bytes the imported files now take.
+     */
+    private long compactSounds(List<String> rels) throws IOException {
+        Properties compacted = loadCompactLog();
+        List<String> todo = new ArrayList<>();
+        long todoBytes = 0;
+        for (String rel : rels) {
+            File f = new File(mDest, rel);
+            if (!rel.toLowerCase(Locale.ROOT).endsWith(".big") || !f.isFile() || compacted.containsKey(rel)) continue;
+            if (BigAudioCompactor.worthCompacting(f)) { todo.add(rel); todoBytes += f.length(); }
+        }
+        long doneBefore = 0;
+        for (String rel : todo) {
+            File f = new File(mDest, rel);
+            File tmp = new File(f.getPath() + ".compact");
+            final long base = doneBefore;
+            final long all = todoBytes;
+            final String name = rel;
+            long originalSize = f.length();
+            final long[] lastReport = { -1 };
+            BigAudioCompactor.compact(f, tmp, (done, total) -> {
+                if (lastReport[0] < 0 || done - lastReport[0] >= (8L << 20) || done == total) {
+                    lastReport[0] = done;
+                    mProgress.onProgress(R.string.setup_optimizing, name, base + done, all);
+                }
+            });
+            if (!f.delete() || !tmp.renameTo(f)) throw new IOException("cannot replace " + rel);
+            compacted.setProperty(rel, String.valueOf(originalSize));
+            saveCompactLog(compacted);
+            doneBefore += originalSize;
+        }
+        long installed = 0;
+        for (String rel : rels) installed += new File(mDest, rel).length();
+        return installed;
+    }
+
+    private Properties loadCompactLog() {
+        Properties p = new Properties();
+        File f = new File(mDest, COMPACT_LOG);
+        if (f.isFile()) {
+            try (InputStream in = new FileInputStream(f)) {
+                p.load(in);
+            } catch (IOException ignored) {
+                // A lost log only means archives get copied again.
+            }
+        }
+        return p;
+    }
+
+    private void saveCompactLog(Properties p) throws IOException {
+        mDest.mkdirs();
+        try (OutputStream os = new FileOutputStream(new File(mDest, COMPACT_LOG))) {
+            p.store(os, null);
         }
     }
 

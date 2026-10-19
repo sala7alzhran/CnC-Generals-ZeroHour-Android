@@ -11,6 +11,7 @@
     <!-- %1$s = file name, %2$s = amount done, %3$s = total -->
     <string name="setup_copying">Copying game files…\n%1$s\n%2$s of %3$s</string>
     <string name="setup_unzipping">Unpacking the zip…\n%1$s\n%2$s of %3$s</string>
+    <string name="setup_optimizing">Making the sound files smaller…\n%1$s\n%2$s of %3$s</string>
     <string name="setup_done">Game files installed (%1$s).\n\nYou can now delete the copy you put on the phone to free space.</string>
     <string name="setup_err_missing">These game files are missing:\n%1$s\n\nPick the Zero Hour folder that contains INIZH.big and the Data folder.</string>
     <string name="setup_err_missing_base">W3D.big, Textures.big and Terrain.big come from the original Generals game. On Steam they are in the ZH_Generals folder: copy the whole Zero Hour folder, including ZH_Generals.</string>

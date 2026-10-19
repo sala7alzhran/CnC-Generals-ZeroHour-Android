@@ -9,6 +9,13 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
   app's internal data dir, publish native display size, run `GameMain()`.
 - CMake: `SAGE_USE_OPENAL` backend, SDL3/FFmpeg via vcpkg, DXVK `.so` integration
   (`cmake/sdl3.cmake`, per‑target `CMakeLists.txt`, `vcpkg.json`).
+- **Fixed** the status/navigation bars staying painted over the game on Android 15/16:
+  `ZerohourActivity` now owns immersive mode via `WindowInsetsController` and re‑applies it on
+  resume, focus gain and whenever the insets show a bar (SDL's legacy flags + re‑hide callback no
+  longer work with edge‑to‑edge enforcement).
+- **Added** a committed debug signing key (`android/app/debug.keystore`) so every CI/local debug
+  APK installs over the previous one instead of failing with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
+  and forcing an uninstall + 2.6 GB re‑import.
 
 ## Rendering (DXVK → Vulkan on Mali‑G57)
 - **Fixed** the Mali shader‑compiler crash in missions — root cause: D3D user clip planes

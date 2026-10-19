@@ -5,9 +5,16 @@ import android.content.Context;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.DisplayMetrics;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
 
 import org.libsdl.app.SDLActivity;
 
@@ -19,9 +26,65 @@ public class ZerohourActivity extends SDLActivity
     // without this the two phones cannot see each other's hosted LAN games.
     private WifiManager.MulticastLock mMulticastLock;
 
+    // @port Android: the game must own the whole screen. SDLActivity hides the system bars with
+    // the legacy View.SYSTEM_UI_FLAG_* flags and re-hides them from a
+    // setOnSystemUiVisibilityChangeListener callback; both are deprecated since API 30 and on
+    // Android 15/16 (edge-to-edge enforced for targetSdk 35) the re-hide no longer fires, so one
+    // swipe, dialog or soft-keyboard round trip left the status bar (top 121 px) and the
+    // navigation bar (right 133 px) painted over the game for the rest of the session. We hide
+    // the bars with WindowInsetsController, let a swipe show them only transiently, and re-apply
+    // whenever the window gains focus, resumes, or the insets report a bar visible again.
+    private final Handler mUiHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mRehideSystemBars = this::applyImmersiveMode;
+    private static final long REHIDE_DELAY_MS = 1500;   // let a deliberate swipe-reveal be seen first
+
+    private void applyImmersiveMode() {
+        Window window = getWindow();
+        if (window == null) {
+            return;
+        }
+        View decor = window.getDecorView();
+        WindowManager.LayoutParams lp = window.getAttributes();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false);
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+            }
+        } else {
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        }
+        window.setAttributes(lp);
+    }
+
+    private void scheduleRehideSystemBars() {
+        mUiHandler.removeCallbacks(mRehideSystemBars);   // one pending re-hide at a time
+        mUiHandler.postDelayed(mRehideSystemBars, REHIDE_DELAY_MS);
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        applyImmersiveMode();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // The decor view sees every insets change; SDLSurface keeps its own listener for the
+            // safe-area it reports to native, and this one does not consume anything.
+            getWindow().getDecorView().setOnApplyWindowInsetsListener((v, insets) -> {
+                if (insets.isVisible(WindowInsets.Type.statusBars())
+                        || insets.isVisible(WindowInsets.Type.navigationBars())) {
+                    scheduleRehideSystemBars();
+                }
+                return v.onApplyWindowInsets(insets);
+            });
+        }
         try {
             WifiManager wifi = (WifiManager) getApplicationContext()
                     .getSystemService(Context.WIFI_SERVICE);
@@ -44,6 +107,22 @@ public class ZerohourActivity extends SDLActivity
     @Override
     public void setOrientationBis(int w, int h, boolean resizable, String hint) {
         super.setOrientationBis(w, h, resizable, "LandscapeLeft LandscapeRight");
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        applyImmersiveMode();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            // Coming back from a system dialog, the folder picker or the keyboard: the bars may
+            // have been restored meanwhile.
+            applyImmersiveMode();
+        }
     }
 
     // ---- Touch-controls bridge: called from the engine's Android touch layer over JNI ----

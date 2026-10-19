@@ -1,6 +1,7 @@
 
 package org.generalsx.zerohour;
 
+import android.app.ActivityManager;
 import android.content.Context;
 import android.net.wifi.WifiManager;
 import android.os.Build;
@@ -142,6 +143,24 @@ public class ZerohourActivity extends SDLActivity
         }
         DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
         return TouchMetrics.pixelsPerMm(dm.xdpi, dm.densityDpi);
+    }
+
+    /**
+     * Memory class of this phone for the engine's first-run graphics defaults: 0 = 4 GB or less,
+     * 1 = about 6 GB, 2 = more (see MemoryTier). Called over JNI from W3DDisplay.cpp.
+     */
+    public static int getMemoryTier() {
+        Context ctx = getContext();
+        if (ctx == null) {
+            return MemoryTier.HIGH;
+        }
+        ActivityManager am = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
+        if (am == null) {
+            return MemoryTier.HIGH;
+        }
+        ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
+        am.getMemoryInfo(info);
+        return MemoryTier.fromTotalMemory(info.totalMem, am.isLowRamDevice());
     }
 
     /**

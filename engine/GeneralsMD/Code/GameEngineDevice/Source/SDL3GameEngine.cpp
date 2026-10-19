@@ -261,14 +261,20 @@ inline bool videoPlaying() {
 inline bool menuButtonActive() {
 	return inLiveGame() && (!TheInGameUI || !TheInGameUI->isQuitMenuVisible()) && !videoPlaying();
 }
+void toEngine(float px, float py, ICoord2D &out);   // window pixels -> display coordinates
+// Both buttons are drawn in the display's coordinates (W3DInGameUI.cpp), which are not window
+// pixels when the game renders below the screen resolution (Options > Resolution).
 inline bool onMenuButton(float px, float py) {
-	return px >= MENU_BTN_X && px < MENU_BTN_X + MENU_BTN_W
-	    && py >= MENU_BTN_Y && py < MENU_BTN_Y + MENU_BTN_H;
+	ICoord2D e; toEngine(px, py, e);
+	return e.x >= MENU_BTN_X && e.x < MENU_BTN_X + MENU_BTN_W
+	    && e.y >= MENU_BTN_Y && e.y < MENU_BTN_Y + MENU_BTN_H;
 }
 inline bool onSkipButton(float px, float py) {
 	float w, h; winSize(w, h);
+	if (TheDisplay && TheDisplay->getWidth()) w = (float)TheDisplay->getWidth();
+	ICoord2D e; toEngine(px, py, e);
 	float bx = w - SKIP_BTN_MX - SKIP_BTN_W;   // top-right, right-anchored (matches draw)
-	return px >= bx && px < bx + SKIP_BTN_W && py >= SKIP_BTN_Y && py < SKIP_BTN_Y + SKIP_BTN_H;
+	return e.x >= bx && e.x < bx + SKIP_BTN_W && e.y >= SKIP_BTN_Y && e.y < SKIP_BTN_Y + SKIP_BTN_H;
 }
 
 // Camera sensitivity from the Options > Scroll Speed slider, which persists

@@ -8,3 +8,8 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(gamespy)
+
+if(ANDROID)
+    target_compile_options(gscommon PRIVATE
+        -include "${CMAKE_CURRENT_LIST_DIR}/android/gamespy_bionic_compat.h")
+endif()

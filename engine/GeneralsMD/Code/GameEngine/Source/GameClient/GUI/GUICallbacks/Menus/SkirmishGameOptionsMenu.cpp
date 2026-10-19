@@ -1322,6 +1322,15 @@ void SkirmishGameOptionsMenuInit( WindowLayout *layout, void *userData )
 	TheSkirmishGameInfo->setSlot(1, gSlot);
 
 	ParseAsciiStringToGameInfo(TheSkirmishGameInfo, prefs.getSlotList());
+#if defined(__ANDROID__)
+	// @port Android: the saved slot list carries the player's name too, which brought back the old
+	// "localhost" default. Keep the name chosen above (SkirmishPreferences::getUserName).
+	if (GameSlot *localSlot = TheSkirmishGameInfo->getSlot(0))
+	{
+		if (localSlot->isHuman())
+			localSlot->setName(prefs.getUserName());
+	}
+#endif
 	TheSkirmishGameInfo->setSeed(GetTickCount());
 
 	UnsignedInt isPreorder = 0;

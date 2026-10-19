@@ -61,6 +61,10 @@ jobs:
             autoconf autoconf-archive automake libtool bison flex
           cmake --version | head -n1; meson --version; glslangValidator --version | head -n1
 
+      # The runner sets ANDROID_SDK_ROOT in the shell only; ${{ env.* }} needs it in GITHUB_ENV.
+      - name: Locate Android SDK
+        run: echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+
       - name: Cache Android NDK
         id: ndk-cache
         uses: actions/cache@v4

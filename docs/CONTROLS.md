@@ -30,6 +30,11 @@ a wide screen was about 190–590).
 
 ## Menus, HUD and building placement
 
+**Quick Battle.** The main menu has a **QUICK BATTLE** button (bottom-right). It opens one phone
+screen of big cards — General, Map, Opponents, Difficulty, Starting cash — each with ◀ ▶ arrows,
+and **START BATTLE**. It remembers your last choice (shared with the Skirmish screen) and starts an
+ordinary skirmish; the full Skirmish screen is still there for everything else.
+
 Wherever the finger is on a window rather than on the battlefield (menus, the command bar, the
 minimap, while placing a building, in cutscenes) a finger behaves like a mouse:
 

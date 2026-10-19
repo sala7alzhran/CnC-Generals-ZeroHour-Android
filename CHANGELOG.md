@@ -104,6 +104,11 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
 - **Changed** the camera range on Android to 70–550 world units above ground (absolute, no
   aspect‑ratio compensation) and battles start 33 % zoomed in; the alternate‑mouse option is
   pinned off so a tap always selects/orders and a 2‑finger tap always deselects.
+- **Added** a **Quick Battle** screen on the main menu (MOBILE‑UX‑SPEC Phase B‑2): big cards for
+  general, map, opponents, difficulty and starting cash with ◀ ▶ arrows and START BATTLE, built in
+  code on top of the main menu, drawn from primitives (no `.wnd` data shipped). It fills the
+  engine's skirmish setup exactly as the Skirmish screen does, saves it to the skirmish
+  preferences and starts a normal skirmish.
 
 ## Audio
 - **Fixed** total silence: `SDL3Main.cpp` forced desktop OpenAL drivers on Android (`__linux__`

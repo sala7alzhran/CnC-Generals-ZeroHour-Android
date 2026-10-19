@@ -22,6 +22,22 @@ A battle starts about ⅓ zoomed in from the widest view, so units are readable;
 more. The zoom range on phones is roughly 70–550 world units above the ground (the PC default on
 a wide screen was about 190–590).
 
+## The HUD in a battle
+
+The PC command bar is gone; the battlefield fills the screen and the controls sit in the thumb
+zones (design: [MOBILE-UX-SPEC.md §6](MOBILE-UX-SPEC.md), implementation:
+[fixes/phone-hud.md](fixes/phone-hud.md)).
+
+| Where | What |
+|---|---|
+| **Top strip** | Left to right: **☰** pause / in-game menu (ESC); your **money**; the **power meter** (empty trough until something produces power); the **★ generals star** (opens the promotion screen; it flashes when you have points to spend); your **general's powers** as a row of tiles once you have any — each shows its recharge clock. In multiplayer only: chat and beacon buttons before the minimap. |
+| **Top-right** | The **minimap**, only once you have a radar (command centre, radar van…). Tap it to jump the camera there; with units selected, tap to send them (attack-move if that mode is on). It glows when your base is under attack. |
+| **Left column** | Only what has content, stacked from the top: each **control group that holds units** (its number, and how many units in the small badge): tap = select, tap again quickly = also centre the camera, **hold ≈ ⅓ s** (short vibration) = replace it with the current selection. While something is selected, a **"+" slot** offers the first free group: hold it to assign (a tap does nothing). **ALL** = select every unit. **IDLE** appears only while a worker/dozer is idle: select the next one. |
+| **Right drawer** | Slides in from the right edge while something you selected has commands, and is exactly as tall as those commands need: 3 columns of tiles, the first command bottom-left under your thumb, no gaps. Build (dozer), train and upgrade (factory), abilities, sell, repair, rally point, stop/evacuate for garrisons. Each build tile shows its **price** (red when you cannot pay it yet); a **padlock** marks what you cannot build yet (it stays in colour, just darker). The **name** of the tile you touched appears beside the drawer. Above the tiles: the **portrait** with its upgrade/veterancy icons, and — only while something is being built — the **production queue** beside it (tap an item to cancel; the first shows its progress). |
+
+Taps on the strip or the drawer that miss a control do nothing (they never hit a unit behind
+them); taps anywhere else on the battlefield work as in the gesture table above.
+
 ## Menus, HUD and building placement
 
 Wherever the finger is on a window rather than on the battlefield (menus, the command bar, the

@@ -43,6 +43,15 @@
 #include "GameClient/ControlBar.h"
 #if defined(__ANDROID__)
 #include "GameClient/VideoPlayer.h"   // TheVideoPlayer->firstStream() for the Skip button
+#include "GameClient/AndroidHud.h"    // shared geometry and palette of the phone HUD
+#include "GameClient/DisplayString.h"
+#include "GameClient/DisplayStringManager.h"
+#include "GameClient/GameFont.h"
+#include "GameClient/GameText.h"      // command names for the drawer's name label
+#include "GameClient/Mouse.h"         // the tile under the (synthesized) cursor
+#include "Common/Money.h"
+#include "Common/Player.h"
+#include "Common/PlayerList.h"
 #endif
 #include "W3DDevice/GameClient/W3DAssetManager.h"
 #include "W3DDevice/GameClient/W3DGUICallbacks.h"
@@ -374,6 +383,9 @@ void W3DInGameUI::update()
 
 }
 
+#if defined(__ANDROID__)
+namespace { void releaseAndroidHudText(); }   // defined with the HUD overlay pass below
+#endif
 //-------------------------------------------------------------------------------------------------
 /** Reset the in game ui */
 //-------------------------------------------------------------------------------------------------
@@ -383,32 +395,323 @@ void W3DInGameUI::reset()
 	// call base
 	InGameUI::reset();
 
+
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android smart HUD: the overlay pass's text objects are per game
+	releaseAndroidHudText();
+#endif
 }
 
 #if defined(__ANDROID__)
-// GeneralsX @feature Android on-screen ESC/menu button (top-left), themed to match
-// the in-game HUD buttons. Tapping it invokes ToggleQuitMenu() — the same action as
-// the desktop ESC key. The tap hit-test lives in SDL3GameEngine.cpp's touch layer;
-// KEEP THIS GEOMETRY IN SYNC WITH kMenuBtn* THERE.
+// GeneralsX @feature Android smart HUD 19/10/2026 The HUD's overlay pass, drawn after the window
+// system so it sits on top of the bar's own windows: the overlay buttons that are not GameWindows
+// (the ☰ menu and the left-thumb column: control groups with their unit count, one "+" slot to
+// assign a selection, ALL, IDLE) and the chrome of the command drawer's tiles (hairline frames, cost
+// pills, lock badges, the name of the tile under the finger). Presence and geometry come from
+// ControlBar (phoneOverlays / phoneMetrics), the same source the touch layer hit-tests against
+// (SDL3GameEngine.cpp), so draw, hit-test and layout cannot drift apart.
+extern Int TheAndroidOverlayPressed;   // the overlay the finger is holding down (-1: none); set by the touch layer
 namespace {
-	const Int kMenuBtnX = 16, kMenuBtnY = 14, kMenuBtnW = 108, kMenuBtnH = 56;
-	void drawAndroidMenuButton()
+	typedef AndroidHud::Rect HudRect;   // WWLib's trect.h declares a global Rect, so not that name
+	namespace Palette = AndroidHud::Palette;
+
+	// Text objects live for the session and are re-set only when their content changes: nothing
+	// here allocates per frame. Released in W3DInGameUI::reset().
+	DisplayString *s_overlayLabel[ AndroidHud::OVERLAY_COUNT ] = { nullptr };
+	DisplayString *s_smallText[ AndroidHud::NUM_CONTROL_GROUPS ] = { nullptr };   // unit count, or the slot number on the "+" tile
+	Int            s_smallValue[ AndroidHud::NUM_CONTROL_GROUPS ] = { 0 };
+	DisplayString *s_costText[ AndroidHud::GRID_CELLS ] = { nullptr };
+	Int            s_costValue[ AndroidHud::GRID_CELLS ] = { 0 };
+	DisplayString *s_nameText = nullptr;
+	const CommandButton *s_nameCommand = nullptr;
+	GameFont *s_fontBig = nullptr, *s_fontSmall = nullptr, *s_fontLabel = nullptr;
+	const WideChar *const kOverlayText[ AndroidHud::OVERLAY_COUNT ] = { L"", L"1", L"2", L"3", L"4", L"ALL", L"IDLE" };
+
+	void ensureFonts()
 	{
-		if (!TheDisplay)
+		if( !TheControlBar )
 			return;
-		const Int x = kMenuBtnX, y = kMenuBtnY, w = kMenuBtnW, h = kMenuBtnH;
-		// dark translucent panel + gold bevel border (matches the game's tan/gold button trim)
-		TheDisplay->drawFillRect(x, y, w, h, GameMakeColor(18, 22, 28, 180));
-		TheDisplay->drawOpenRect(x, y, w, h, 2.0f, GameMakeColor(214, 184, 112, 240));
-		TheDisplay->drawOpenRect(x + 3, y + 3, w - 6, h - 6, 1.0f, GameMakeColor(120, 100, 60, 170));
-		// "menu" glyph: three stacked gold bars
-		const Int barW = 46, barH = 5;
-		const Int bx = x + (w - barW) / 2;
-		const Int cy = y + h / 2;
-		const UnsignedInt bar = GameMakeColor(230, 205, 140, 245);
-		TheDisplay->drawFillRect(bx, cy - 13, barW, barH, bar);
-		TheDisplay->drawFillRect(bx, cy - 2,  barW, barH, bar);
-		TheDisplay->drawFillRect(bx, cy + 9,  barW, barH, bar);
+		if( !s_fontBig )   s_fontBig   = TheControlBar->getPhoneHudFont( 3.6f );
+		if( !s_fontSmall ) s_fontSmall = TheControlBar->getPhoneHudFont( 1.9f );
+		if( !s_fontLabel ) s_fontLabel = TheControlBar->getPhoneHudFont( 2.6f );
+	}
+
+	DisplayString *makeText( GameFont *font )
+	{
+		if( !TheDisplayStringManager )
+			return nullptr;
+		DisplayString *s = TheDisplayStringManager->newDisplayString();
+		if( s && font )
+			s->setFont( font );
+		return s;
+	}
+
+	void releaseText( DisplayString *&s )
+	{
+		if( s && TheDisplayStringManager )
+			TheDisplayStringManager->freeDisplayString( s );
+		s = nullptr;
+	}
+
+	void releaseAndroidHudText()
+	{
+		for( Int i = 0; i < AndroidHud::OVERLAY_COUNT; ++i ) releaseText( s_overlayLabel[ i ] );
+		for( Int i = 0; i < AndroidHud::NUM_CONTROL_GROUPS; ++i ) releaseText( s_smallText[ i ] );
+		for( Int i = 0; i < AndroidHud::GRID_CELLS; ++i ) releaseText( s_costText[ i ] );
+		releaseText( s_nameText );
+		s_nameCommand = nullptr;
+	}
+
+	// --- primitives ---
+	inline void fill( const HudRect &r, UnsignedInt color )
+	{
+		if( r.w > 0 && r.h > 0 )
+			TheDisplay->drawFillRect( r.x, r.y, r.w, r.h, color );
+	}
+	inline void frame( const HudRect &r, Int line, UnsignedInt color )
+	{
+		if( r.w > 0 && r.h > 0 )
+			TheDisplay->drawOpenRect( r.x, r.y, r.w, r.h, (Real)line, color );
+	}
+	inline HudRect windowRect( GameWindow *w )
+	{
+		ICoord2D pos, size;
+		w->winGetScreenPosition( &pos.x, &pos.y );
+		w->winGetSize( &size.x, &size.y );
+		HudRect r = { pos.x, pos.y, size.x, size.y };
+		return r;
+	}
+	void drawCentered( DisplayString *s, const HudRect &r, UnsignedInt color )
+	{
+		Int w = 0, h = 0;
+		s->getSize( &w, &h );
+		s->draw( r.x + (r.w - w) / 2, r.y + (r.h - h) / 2, color, Palette::TextShadow );
+	}
+	// a small text in a filled pill, anchored by its bottom-right corner
+	void drawPill( DisplayString *s, Int right, Int bottom, Int padX, Int padY, UnsignedInt fillColor, UnsignedInt textColor, Int line )
+	{
+		Int w = 0, h = 0;
+		s->getSize( &w, &h );
+		HudRect pill = { right - w - 2 * padX, bottom - h - 2 * padY, w + 2 * padX, h + 2 * padY };
+		fill( pill, fillColor );
+		if( line > 0 )
+			frame( pill, line, Palette::TileLine );
+		s->draw( pill.x + padX, pill.y + padY, textColor, Palette::TextShadow );
+	}
+
+	// An overlay button: bed + hairline (bright while pressed). A ghost is a hairline only.
+	void drawOverlayFrame( const HudRect &r, Int line, Bool pressed, Bool ghost )
+	{
+		if( ghost )
+		{
+			frame( r, line, pressed ? Palette::TileLineHot : Palette::GhostLine );
+			return;
+		}
+		fill( r, pressed ? Palette::PressedFill : Palette::TileFill );
+		frame( r, line, pressed ? Palette::TileLineHot : Palette::TileLine );
+	}
+
+	void drawMenuGlyph( const HudRect &r, UnsignedInt color )
+	{
+		const Int barH = r.h / 12 < 3 ? 3 : r.h / 12;
+		const Int barW = r.w * 2 / 5;
+		const Int bx = r.x + (r.w - barW) / 2, cy = r.y + r.h / 2, step = barH * 5 / 2;
+		for( Int k = -1; k <= 1; ++k )
+			TheDisplay->drawFillRect( bx, cy + k * step - barH / 2, barW, barH, color );
+	}
+
+	void drawPlusGlyph( const HudRect &r, UnsignedInt color )
+	{
+		const Int t = r.h / 14 < 2 ? 2 : r.h / 14, len = r.w * 2 / 5;
+		const Int cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+		TheDisplay->drawFillRect( cx - len / 2, cy - t / 2, len, t, color );
+		TheDisplay->drawFillRect( cx - t / 2, cy - len / 2, t, len, color );
+	}
+
+	// A padlock in the tile's top-right corner: a dark box, a body, a shackle of three lines.
+	void drawLockGlyph( const HudRect &tile, Int line )
+	{
+		const Int s = tile.h / 3;
+		const HudRect box = { tile.right() - line * 2 - s, tile.y + line * 2, s, s };
+		fill( box, Palette::LockFill );
+		const Int bw = s * 5 / 8, bh = s * 3 / 8;
+		const Int bx = box.x + (s - bw) / 2, by = box.y + s - bh - s / 8;
+		TheDisplay->drawFillRect( bx, by, bw, bh, Palette::Glyph );
+		const Real lw = (Real)(line * 2);
+		const Int sw = bw * 3 / 5, sx0 = bx + (bw - sw) / 2, sx1 = sx0 + sw, sy = by - bh * 3 / 4;
+		TheDisplay->drawLine( sx0, by, sx0, sy, lw, Palette::Glyph );
+		TheDisplay->drawLine( sx1, by, sx1, sy, lw, Palette::Glyph );
+		TheDisplay->drawLine( sx0, sy, sx1, sy, lw, Palette::Glyph );
+	}
+
+	void drawOverlayLabel( Int id, const HudRect &r, UnsignedInt color )
+	{
+		DisplayString *&str = s_overlayLabel[ id ];
+		if( !str )
+		{
+			str = makeText( s_fontBig );
+			if( !str )
+				return;
+			str->setText( UnicodeString( kOverlayText[ id ] ) );
+		}
+		drawCentered( str, r, color );
+	}
+
+	// the small number on a group tile: the unit count (bottom-right pill), or the slot number on a
+	// "+" tile (top-left, no pill)
+	void drawGroupNumber( Int group, Int value, const HudRect &r, Bool ghost, const AndroidHud::Metrics &m )
+	{
+		DisplayString *&str = s_smallText[ group ];
+		if( !str )
+		{
+			str = makeText( s_fontSmall );
+			if( !str )
+				return;
+			s_smallValue[ group ] = value - 1;   // force the first set
+		}
+		if( s_smallValue[ group ] != value )
+		{
+			s_smallValue[ group ] = value;
+			UnicodeString text;
+			text.format( L"%d", value );
+			str->setText( text );
+		}
+		if( ghost )
+			str->draw( r.x + m.gap, r.y + m.gap / 2, Palette::GlyphDim, Palette::TextShadow );
+		else
+			drawPill( str, r.right() - m.line, r.bottom() - m.line, m.gap / 2 + 1, 1, Palette::BadgeFill, Palette::BadgeText, 0 );
+	}
+
+	void drawCostPill( Int cell, const HudRect &tile, Int cost, Bool affordable, const AndroidHud::Metrics &m )
+	{
+		DisplayString *&str = s_costText[ cell ];
+		if( !str )
+		{
+			str = makeText( s_fontSmall );
+			if( !str )
+				return;
+			s_costValue[ cell ] = cost - 1;   // force the first set
+		}
+		if( s_costValue[ cell ] != cost )
+		{
+			s_costValue[ cell ] = cost;
+			UnicodeString text;
+			text.format( L"$%d", cost );
+			str->setText( text );
+		}
+		drawPill( str, tile.right() - m.line, tile.bottom() - m.line, m.gap / 2 + 1, 1, Palette::CostFill,
+							affordable ? Palette::CostText : Palette::CostTextPoor, 0 );
+	}
+
+	// The name of the command tile under the cursor (the last touched tile: the synthesized mouse
+	// stays where the finger lifted), in a label beside the drawer so it never covers a tile.
+	void drawNameLabel( const AndroidHud::Metrics &m )
+	{
+		if( !TheMouse || !TheWindowManager || !TheGameText )
+			return;
+		const MouseIO *io = TheMouse->getMouseStatus();
+		GameWindow *under = TheWindowManager->getWindowUnderCursor( io->pos.x, io->pos.y );
+		GameWindow *tile = nullptr;
+		for( Int c = 0; c < AndroidHud::GRID_CELLS && !tile; ++c )
+			if( under && TheControlBar->getPhoneCommandWindow( c ) == under )
+				tile = under;
+		if( !tile || tile->winIsHidden() )
+			return;
+		const CommandButton *command = TheControlBar->getPhoneCommand( tile );
+		if( !command || command->getTextLabel().isEmpty() )
+			return;
+		if( !s_nameText )
+		{
+			s_nameText = makeText( s_fontLabel );
+			if( !s_nameText )
+				return;
+			s_nameCommand = nullptr;
+		}
+		if( command != s_nameCommand )
+		{
+			s_nameCommand = command;
+			s_nameText->setText( TheGameText->fetch( command->getTextLabel() ) );
+		}
+		AndroidHud::Rect drawer;
+		if( !TheControlBar->getPhoneDrawerRect( drawer ) )
+			return;
+		const HudRect t = windowRect( tile );
+		Int w = 0, h = 0;
+		s_nameText->getSize( &w, &h );
+		HudRect box = { drawer.x - m.gap - (w + 2 * m.pad), t.y + (t.h - (h + 2 * m.gap)) / 2, w + 2 * m.pad, h + 2 * m.gap };
+		if( box.x < m.margin )
+			box.x = m.margin;
+		fill( box, Palette::LabelFill );
+		frame( box, m.line, Palette::PanelLine );
+		s_nameText->draw( box.x + m.pad, box.y + m.gap, Palette::Text, Palette::TextShadow );
+	}
+
+	void drawAndroidHud()
+	{
+		if( !TheDisplay || !TheControlBar || !TheControlBar->phoneHudVisible() )
+			return;
+		ensureFonts();
+		const AndroidHud::Metrics &m = TheControlBar->phoneMetrics();
+		AndroidHud::OverlayState ov[ AndroidHud::OVERLAY_COUNT ];
+		TheControlBar->phoneOverlays( ov );
+
+		// ☰ menu: three stacked bars
+		if( ov[ AndroidHud::OVERLAY_MENU ].visible )
+		{
+			const HudRect &r = ov[ AndroidHud::OVERLAY_MENU ].rect;
+			const Bool pressed = TheAndroidOverlayPressed == AndroidHud::OVERLAY_MENU;
+			drawOverlayFrame( r, m.line, pressed, FALSE );
+			drawMenuGlyph( r, Palette::Glyph );
+		}
+
+		// left column: the groups that exist (with their unit count), the "+" slot, ALL, IDLE
+		for( Int g = 0; g < AndroidHud::NUM_CONTROL_GROUPS; ++g )
+		{
+			const Int id = AndroidHud::OVERLAY_GROUP_1 + g;
+			const AndroidHud::OverlayState &o = ov[ id ];
+			if( !o.visible )
+				continue;
+			const Bool pressed = TheAndroidOverlayPressed == id;
+			drawOverlayFrame( o.rect, m.line, pressed, o.ghost );
+			if( o.ghost )
+			{
+				drawPlusGlyph( o.rect, pressed ? Palette::Glyph : Palette::GlyphDim );
+				drawGroupNumber( g, g + 1, o.rect, TRUE, m );
+			}
+			else
+			{
+				drawOverlayLabel( id, o.rect, Palette::Text );
+				if( o.badge > 0 )
+					drawGroupNumber( g, o.badge, o.rect, FALSE, m );
+			}
+		}
+		for( Int id = AndroidHud::OVERLAY_SELECT_ALL; id <= AndroidHud::OVERLAY_IDLE_WORKER; ++id )
+		{
+			const AndroidHud::OverlayState &o = ov[ id ];
+			if( !o.visible )
+				continue;
+			drawOverlayFrame( o.rect, m.line, TheAndroidOverlayPressed == id, FALSE );
+			drawOverlayLabel( id, o.rect, Palette::Text );
+		}
+
+		// drawer tiles: hairline, price, lock
+		Player *player = ThePlayerList ? ThePlayerList->getLocalPlayer() : nullptr;
+		const Int money = player ? (Int)player->getMoney()->countMoney() : 0;
+		for( Int c = 0; c < AndroidHud::GRID_CELLS; ++c )
+		{
+			GameWindow *tile = TheControlBar->getPhoneCommandWindow( c );
+			if( !tile || tile->winIsHidden() )
+				continue;
+			const HudRect t = windowRect( tile );
+			frame( AndroidHud::inflate( t, m.line ), m.line, Palette::TileLine );
+			const Int cost = TheControlBar->getPhoneCommandCost( TheControlBar->getPhoneCommand( tile ) );
+			if( cost > 0 )
+				drawCostPill( c, t, cost, money >= cost, m );
+			if( !tile->winGetEnabled() && !BitIsSet( tile->winGetStatus(), WIN_STATUS_NOT_READY ) )
+				drawLockGlyph( t, m.line );
+		}
+
+		drawNameLabel( m );
 	}
 
 	// On-screen SKIP button (top-right), shown during any video/cutscene. Tap → ESC (skip),
@@ -494,11 +797,11 @@ void W3DInGameUI::draw()
 
 #if defined(__ANDROID__)
 	// Drawn last so it sits on top of the HUD/video. During a cutscene show the SKIP button
-	// (top-right); otherwise, while actually playing, show the ESC/menu button (top-left).
+	// (top-right); otherwise, while actually playing, the overlay buttons (menu, control groups).
 	if (TheVideoPlayer && TheVideoPlayer->firstStream())
 		drawAndroidSkipButton();
 	else if (TheGameLogic && TheGameLogic->isInGame() && !TheGameLogic->isInShellGame() && !isQuitMenuVisible())
-		drawAndroidMenuButton();
+		drawAndroidHud();
 #endif
 
 	TheDisplay->endBatch();

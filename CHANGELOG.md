@@ -49,6 +49,22 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
 - **Changed** the camera range on Android to 70–550 world units above ground (absolute, no
   aspect‑ratio compensation) and battles start 33 % zoomed in; the alternate‑mouse option is
   pinned off so a tap always selects/orders and a 2‑finger tap always deselects.
+- **Added** the smart phone HUD (MOBILE‑UX‑SPEC Phase C‑1): the battlefield fills the screen; the
+  control bar's own windows are re‑laid‑out at runtime into a top strip (☰, money, power, ★,
+  the general's powers row), a top‑right minimap and a right‑thumb command drawer of 4:3 tiles
+  (≈ 10 mm) that slides in only while the selection has commands; a left‑thumb column adds the
+  control groups that hold units (with counts), a "+" slot to assign, ALL and IDLE. All geometry
+  and one palette from one header (`AndroidHud.h`), sized in mm from the display density.
+- **Fixed** HUD taps falling through to the battlefield (a tap on a build tile ordered the dozer
+  to drive there): the bar's artwork windows were still at their PC positions and, being no‑input,
+  were hit before the tiles. Artwork is now parked off‑screen at zero size, panels and the root
+  block the taps they do not use, and the strip and drawer are dead zones for the touch layer.
+- **Changed** the HUD's look after the first phone test: nothing is shown without content (no
+  empty column slots, no empty queue, no radar frame without a radar, no chat/beacon in single
+  player), visible commands are packed into the first cells, every build tile shows its price
+  (red when unaffordable) and a padlock when locked (dimmed in colour instead of greyscale), the
+  touched tile's name appears beside the drawer, money sits on one line in a pill, the power meter
+  has a trough.
 
 ## Audio
 - **Fixed** total silence: `SDL3Main.cpp` forced desktop OpenAL drivers on Android (`__linux__`

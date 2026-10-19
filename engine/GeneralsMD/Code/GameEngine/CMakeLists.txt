@@ -142,6 +142,7 @@ set(GAMEENGINE_SRC
 #    Include/GameClient/ClientRandomValue.h
 #    Include/GameClient/Color.h
 #    Include/GameClient/CommandXlat.h
+    Include/GameClient/AndroidHud.h
     Include/GameClient/ControlBar.h
     Include/GameClient/ControlBarResizer.h
     Include/GameClient/ControlBarScheme.h
@@ -697,6 +698,7 @@ set(GAMEENGINE_SRC
     Source/GameClient/GUI/AnimateWindowManager.cpp
 #    Source/GameClient/GUI/ChallengeGenerals.cpp
     Source/GameClient/GUI/ControlBar/ControlBar.cpp
+    Source/GameClient/GUI/ControlBar/ControlBarPhoneLayout.cpp
     Source/GameClient/GUI/ControlBar/ControlBarBeacon.cpp
     Source/GameClient/GUI/ControlBar/ControlBarCommand.cpp
     Source/GameClient/GUI/ControlBar/ControlBarCommandProcessing.cpp

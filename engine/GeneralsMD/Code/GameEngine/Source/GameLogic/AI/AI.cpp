@@ -26,6 +26,9 @@
 // The Artificial Intelligence system
 // Author: Michael S. Booth, November 2000
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
+#if defined(__ANDROID__)
+#include <chrono>
+#endif
 
 #include "Common/CRCDebug.h"
 #include "Common/GameState.h"
@@ -355,14 +358,31 @@ void AI::reset()
  */
 void AI::update()
 {
+#if defined(__ANDROID__)
+	// @port Android: log AI frames over 10 ms split into pathfinding and player updates (late-game
+	// slowdowns; the pathfinder logs its own detail).
+	typedef std::chrono::steady_clock AIClock;
+	const AIClock::time_point aiStart = AIClock::now();
+#endif
 	// Do pathfinding.
 	m_pathfinder->processPathfindQueue();
+#if defined(__ANDROID__)
+	const AIClock::time_point playersStart = AIClock::now();
+#endif
 
 	// run player updates
 	{
 		ThePlayerList->UPDATE();
 	}
 
+#if defined(__ANDROID__)
+	const AIClock::time_point aiEnd = AIClock::now();
+	const double pathMs = std::chrono::duration<double, std::milli>(playersStart - aiStart).count();
+	const double playersMs = std::chrono::duration<double, std::milli>(aiEnd - playersStart).count();
+	if (pathMs + playersMs > 10.0)
+		fprintf(stderr, "INFO: [Perf] AI frame %u: pathfinding %.1f ms, players %.1f ms\n",
+			TheGameLogic->getFrame(), pathMs, playersMs);
+#endif
 }
 
 /**

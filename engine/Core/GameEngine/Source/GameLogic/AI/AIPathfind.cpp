@@ -6041,6 +6041,10 @@ Path *Pathfinder::getAircraftPath( const Object *obj, const Coord3D *to )
 /**
  * Process some path requests in the pathfind queue.
  */
+#if defined(__ANDROID__)
+#include <chrono>
+#endif
+
 //DECLARE_PERF_TIMER(processPathfindQueue)
 void Pathfinder::processPathfindQueue()
 {
@@ -6059,8 +6063,18 @@ void Pathfinder::processPathfindQueue()
 #endif
 #endif
 
+#if defined(__ANDROID__)
+	// @port Android: log pathfinding frames that take longer than 10 ms (late-game slowdowns).
+	typedef std::chrono::steady_clock PathClock;
+	const PathClock::time_point queueStart = PathClock::now();
+#endif
 	if (m_zoneManager.needToCalculateZones()) {
 		m_zoneManager.calculateZones(m_map, m_layers, m_extent);
+#if defined(__ANDROID__)
+		const double zoneMs = std::chrono::duration<double, std::milli>(PathClock::now() - queueStart).count();
+		if (zoneMs > 10.0)
+			fprintf(stderr, "INFO: [Perf] pathfind frame %u: zone recalculation %.1f ms\n", TheGameLogic->getFrame(), zoneMs);
+#endif
 		return;
 	}
 
@@ -6078,6 +6092,11 @@ void Pathfinder::processPathfindQueue()
 
 	m_cumulativeCellsAllocated = 0;	// Number of pathfind cells examined.
 	Int pathsFound = 0;
+#if defined(__ANDROID__)
+	double slowestPathMs = 0.0;
+	Int slowestPathCells = 0;
+	AsciiString slowestPathUnit;
+#endif
 	while (m_cumulativeCellsAllocated < PATHFIND_CELLS_PER_FRAME &&
 		m_queuePRTail!=m_queuePRHead) {
 		Object *obj = TheGameLogic->findObjectByID(m_queuedPathfindRequests[m_queuePRHead]);
@@ -6085,8 +6104,21 @@ void Pathfinder::processPathfindQueue()
 		if (obj) {
 			AIUpdateInterface *ai = obj->getAIUpdateInterface();
 			if (ai) {
+#if defined(__ANDROID__)
+				const PathClock::time_point pathStart = PathClock::now();
+				const Int cellsBefore = m_cumulativeCellsAllocated;
+#endif
 				ai->doPathfind(this);
 				pathsFound++;
+#if defined(__ANDROID__)
+				const double pathMs = std::chrono::duration<double, std::milli>(PathClock::now() - pathStart).count();
+				if (pathMs > slowestPathMs)
+				{
+					slowestPathMs = pathMs;
+					slowestPathCells = m_cumulativeCellsAllocated - cellsBefore;
+					slowestPathUnit = obj->getTemplate()->getName();
+				}
+#endif
 			}
 		}
 		m_queuePRHead = m_queuePRHead+1;
@@ -6098,6 +6130,19 @@ void Pathfinder::processPathfindQueue()
 		PROFILER_PLOT("PathfindCells", (double)m_cumulativeCellsAllocated);
 		PROFILER_PLOT("PathfindPaths", (double)pathsFound);
 	}
+#if defined(__ANDROID__)
+	{
+		const double queueMs = std::chrono::duration<double, std::milli>(PathClock::now() - queueStart).count();
+		if (queueMs > 10.0)
+		{
+			Int queued = m_queuePRTail - m_queuePRHead;
+			if (queued < 0) queued += PATHFIND_QUEUE_LEN;
+			fprintf(stderr, "INFO: [Perf] pathfind frame %u: %.1f ms, %d paths, %d cells, %d still queued | slowest %.1f ms %d cells %s\n",
+				TheGameLogic->getFrame(), queueMs, pathsFound, m_cumulativeCellsAllocated, queued,
+				slowestPathMs, slowestPathCells, slowestPathUnit.str());
+		}
+	}
+#endif
 #ifdef DEBUG_QPF
 	if (pathsFound>0) {
 #ifdef DEBUG_LOGGING

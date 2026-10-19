@@ -137,60 +137,72 @@ re-implement commands. (The `.wnd` layout files are EA game data and cannot be s
 │ (ARMY)                         the battlefield, full height            (◎) (◎) (◎)  │ powers: round, ring
 │ ( + )                                                                Particle 4:32  │ superweapon timers
 │ (1·5)                                                                                │ groups once created
-│                                                   ┌────────────────────────────────┐ │
-│                                                   │ [img] Dozer ▬▬▬▬▬  BASE DEF SUP │ │ chip + tabs
-│                                                   │ [tile] [tile] [tile] [tile]     │ │ ≤ 2 rows × 4
-│                                                   │ [tile] [tile] [tile] [tile]     │ │ name + price
-│                                                   └────────────────────────────────┘ │
+│                                             ┌──────────────────────────────────────┐ │
+│                                             │ [img] Dozer ▬▬▬▬▬▬▬▬▬  BASE  DEF  SUP │ │ chip + tabs
+│                                             │ [tile] [tile] [tile] [tile] [tile]   │ │ ≤ 2 rows × 5
+│                                             │ [tile] [tile] [tile] [tile] [tile]   │ │ name + price
+│                                             └──────────────────────────────────────┘ │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 One visual language everywhere: dark translucent panels, a thin gold outline (0.15 mm), rounded
-corners (r ≈ 1.2 mm; drawn as a rect stack plus arc segments — the renderer has no rounded
-primitive), one font (the game's bold Arial at 1.6 / 2.2 / 3.0 / 3.6 mm), warm text with a shadow,
-bright gold for pressed or available, muted for locked. The centre of the screen stays clear. All
-sizes in mm from the display density (`AndroidHud.h`). No EA artwork is shipped or drawn except the
-player's own cameo images inside tiles and the real radar.
+corners (r ≈ 1.2 mm) and round buttons drawn as triangle fans straight into the renderer's 2D batch
+(`Display::drawFillCircle / drawArc / drawFillRoundRect / drawOpenRoundRect`, Android-only), one
+font (the game's bold Arial at 1.5 / 1.7 / 1.9 / 2.2 / 3.0 mm), warm text with a shadow, bright gold
+for pressed or available, muted for locked. The centre of the screen stays clear. All sizes in mm
+from the display density (`AndroidHud.h`). No EA artwork is shipped or drawn except the player's own
+cameo images inside tiles and buttons, and the real radar.
 
-**Top-left.** A **round ☰ button** (10 mm) and **one resource pill** (≈ 38 × 8 mm): a gold `$` coin
-glyph, the money with a thousands separator, a ⚡ glyph and a **power bar** (14 × 2 mm; green when
-production covers consumption, amber inside the engine's yellow range, red in deficit). Money and
-power are read from the viewed player's `Money` and `Energy` and drawn by the HUD; the engine's
+**Top-left.** A **round ☰ button** (10 mm) and **one resource pill** (38 × 8 mm): a gold `$` coin
+glyph, the money with a thousands separator, a ⚡ glyph and a **power bar** (12 × 2 mm; green while
+production covers consumption with a mark for the share in use, red in deficit). Money and power
+are read from the viewed player's `Money` and `Energy` and drawn by the HUD; the engine's
 `MoneyDisplay` and `PowerWindow` are hidden.
 
 **Top-right.** The **minimap** (20 × 14 mm) in a thin gold rounded frame, only while the player has
 a radar (`rts::localPlayerHasRadar`); the **rank badge** beside it (9 mm circle: star glyph and the
 unspent promotion points, `Player::getSciencePurchasePoints()`, pulsing while > 0; it is the engine's
 `ButtonGeneral` with our draw function, so a tap opens the promotion screen as on the PC); under the
-map the **general's powers as round buttons** (9 mm, up to 3 per row) with a **cooldown ring**
-(`Player::findMostReadyShortcutSpecialPowerOfType` → readiness percent; the engine's shortcut
-buttons with our draw function, the cameo inset to 70 %). **Superweapon countdowns** move under the
-powers (Android override of `SuperweaponCountdownPosition`), **named mission timers** under the
-left column (`NamedTimerCountdownPosition`).
+map the **general's powers as round buttons** (8 mm, up to 5 per row, right-aligned, only the ones
+the engine shows) with a **cooldown ring** (the engine's clock percentage on the button, drawn as a
+gold arc on a dark track; a full bright ring while ready, a muted one while unavailable; the engine's
+shortcut buttons with our draw function, the cameo inset to 70 %, the ready-count as a badge).
+**Superweapon countdowns** move under the powers (Android override of the countdown position and a
+physical font size), **named mission timers** to the bottom-left.
 
-**Left column** (left thumb, round 10 mm buttons, packed from the top, nothing without content):
-**IDLE** with the real worker picture (the idle worker's cameo) and a count badge, only while a
-worker is idle; **ARMY** (people glyph; select all); **+** (assign the selection to the first free
-group; only while something is selected); **numbered groups** (number + unit-count badge) only once
+**Left column** (left thumb, round buttons 10 mm — shrunk so six fit above the bottom margin, never
+below 7.5 mm — packed from the top, nothing without content): **IDLE** with the real worker picture
+(the idle worker's own cameo, `InGameUI::androidIdleWorkers`) and a count badge, only while a worker
+is idle; **ARMY** (two figures; select all); **+** (assign the selection to the first free group;
+only while something is selected); **numbered groups** (number + unit-count badge) only once
 created: tap = select, quick second tap = centre, hold = reassign.
 
-**Bottom-right drawer** (right thumb), only while the selection has commands:
-- **Selected-unit chip**: portrait (8 mm), name (`ThingTemplate::getDisplayName`), health bar
-  (`BodyModule`), and the unit count for a multi-selection.
-- **Tabs** for builder menus: **BASE / DEFENSE / SUPPORT** by the structure's KindOf (BASE:
-  `FS_POWER`, `FS_FACTORY`, `FS_BARRACKS`, `FS_SUPPLY_CENTER`, `FS_AIRFIELD`, `FS_INTERNET_CENTER`,
-  `COMMANDCENTER`; DEFENSE: `FS_BASE_DEFENSE`; SUPPORT: `FS_TECHNOLOGY`, `FS_ADVANCED_TECH`,
-  `FS_SUPERWEAPON`, `FS_SUPPLY_DROPZONE`, `FS_BLACK_MARKET`, `FS_STRATEGY_CENTER`, `FS_FAKE`, the
-  rest). Any other menu with more than 8 commands gets a **MORE** page. Within a page the PC's
-  command-set order is kept. Tiles not on the active page are parked off-screen by the layout, not
-  hidden, so the engine's own population and enable/disable logic keeps running on them.
-- **Tiles**: at most **2 rows × 4 columns**, 9.5 mm wide: the cameo (4:3) above a two-line **name**
-  (1.6 mm) and the **price** (gold; red when unaffordable). Available = gold outline; locked (the
-  engine disabled the button) = muted picture + padlock; recharging powers keep the engine's clock.
-- **Production queue**: a row of 3.5 mm thumbnails under the chip while producing, the first with a
-  progress ring; tap = cancel (`ButtonQueue01..09`).
-- **Under construction / OCL timer / beacon** panels take the tile area: one big cancel or sell
-  button with the progress text.
+**Bottom-right drawer** (right thumb), only while the selection has commands, one rounded bed:
+- **Chip row** (7.5 mm): portrait (4:3, the engine's portrait window with its veterancy overlay),
+  name (`ThingTemplate::getDisplayName`), health bar (`BodyModule`, green / amber / red), the
+  engine's upgrade cameos under the name, and the unit count as a badge for a multi-selection.
+- **Tabs**, only when a menu has more commands than one page (10) holds, packed to the right of the
+  chip row (8 mm each, empty tabs hidden). A builder's menu (every command a `DOZER_CONSTRUCT`) is
+  split by the structure's KindOf: **BASE** (`FS_POWER`, `FS_FACTORY`, `FS_WARFACTORY`,
+  `FS_BARRACKS`, `FS_SUPPLY_CENTER`, `FS_AIRFIELD`, `COMMANDCENTER`), **DEF** (`FS_BASE_DEFENSE`),
+  **SUP** (everything else: tech, superweapon, drop zone, black market, internet centre, fakes...).
+  Any other large menu: **UNITS** (what it produces, who it holds), **TECH** (upgrades, sciences),
+  **MORE** (abilities, sell, rally, stop...). A tab with more than a page cycles its pages on a
+  second tap ("UNITS 1/2"). Within a page the PC's command-set order is kept. Tiles not on the
+  active page are parked off-screen by the layout, not hidden, so the engine's own population and
+  enable/disable logic keeps running on them. A new menu opens on its first tab.
+- **Tiles**: at most **2 rows × 5 columns** in reading order, 9 mm wide (shrunk so two rows fit
+  under the minimap block, never below 7 mm): the cameo (4:3) above a two-line **name** (1.5 mm)
+  with the **price** in a pill on the cameo (gold; red when unaffordable). Available = gold outline;
+  locked (the engine disabled the button) = picture dimmed in colour + padlock; recharging and
+  producing keep the engine's clock over the cameo; a flashing button (new command) pulses its
+  outline; a pressed one gets a bright outline and a gold wash.
+- **Production queue**: a row of 3.4 mm thumbnails above the chip while producing (the engine's
+  queue buttons: progress clock, veterancy, tap = cancel).
+- **Under construction / OCL timer / beacon** panels take the tile rows: the cancel or sell button
+  as a tile with the progress text beside it.
+- The drawer slides in from the right edge (160 ms, ease-out); its footprint is a dead zone for the
+  touch layer, as are the resource pill and the minimap block.
 
 ### 6.4 HUD states
 
@@ -221,7 +233,7 @@ HUD adds is where it sits, how it looks, and the touch flow around it.
 
 | Command type | Where / how on the phone | Verified | Status |
 |---|---|---|---|
-| `DOZER_CONSTRUCT` | builder drawer, tabbed; price; tap → placement (S7) | simulation (tap flow), code | placement fix in step 1; tabs in step 2 |
+| `DOZER_CONSTRUCT` | builder drawer, BASE / DEF / SUP tabs; price; tap → placement (S7) | simulation (tap flow, tab taps), code | step 1 + step 2 done; device |
 | `DOZER_CONSTRUCT_CANCEL` | under-construction panel (S4) | code | device |
 | `UNIT_BUILD` | factory drawer; price; queue row | code | device |
 | `CANCEL_UNIT_BUILD`, `CANCEL_UPGRADE` | queue thumbnails | code | device |
@@ -304,23 +316,30 @@ plus the army's own line):
   parent chain ignores reaches the battlefield too. The first HUD build leaked taps because the bar's
   artwork windows, still at their PC positions in the bottom 20 % band, were hit before the tiles.
 - **Layout pass in `ControlBar`** (Android only, `ControlBarPhoneLayout.cpp`), whenever the bar is
-  (re)built, a faction scheme is applied or the stage changes: the root `ControlBarParent` spans the
-  display, keeps `NO_INPUT` (the one intended hole) and gets a draw function that paints the backdrop;
-  its input function blocks the messages children ignore. Every artwork window is **parked**:
-  see-through, zero size, off-screen. Panels paint their bed and block input (`GameWinBlockInput`);
-  containers are see-through and block input; functional leaves are placed by screen rectangle. The
-  engine's buttons that the target re-skins (rank badge, powers, tiles) keep their input and system
-  functions and get an Android draw function; the chip, pill, tabs and column are drawn by the HUD.
+  (re)built, a faction scheme is applied, the stage changes, or the number of powers on show changes
+  (the powers block shapes the room the drawer gets): the root `ControlBarParent` spans the display,
+  keeps `NO_INPUT` (the one intended hole) and gets a draw function that paints every HUD surface
+  that is not a bar window (menu, pill, column, minimap frame, the drawer's bed, chip and tabs); its
+  input function blocks the messages children ignore. Every artwork window is **parked**:
+  see-through, zero size, off-screen. The engine's panels are see-through **containers** (the window
+  manager does not draw a see-through window, only its children) that block input
+  (`GameWinBlockInput`) and are sized to cover their children; functional leaves are placed by
+  screen rectangle. The engine's buttons the design re-skins keep their input and system functions
+  and get an Android draw function: command tiles (`phoneDrawTile`), power shortcuts
+  (`phoneDrawPowerButton`), the rank badge (`phoneDrawRankBadge`).
 - **Drawer pass every frame**, from the top of `ControlBar::update()` (which returns early while
-  nothing is selected): the engine's visibility flags are packed into one signature; the drawer is
-  laid out again only when it changes or while it slides in (160 ms, `(1 − t)³`). Pages: tiles that
-  are not on the active tab are parked by this pass, never hidden, so the engine keeps populating and
-  enabling them.
-- **Backdrop and overlay**: the root's draw paints under the bar's windows; `W3DInGameUI` paints over
-  them after `winRepaint()`. Presence and geometry come from `ControlBar::phoneOverlays()` /
-  `phoneMetrics()`, the same calls the touch layer uses, so draw, hit-test and layout cannot drift.
+  nothing is selected): the engine's visibility flags, the powers on show, the tab and the page are
+  packed into two signatures; the drawer is laid out again only when they change or while it slides
+  in (160 ms, `(1 − t)³`). Tabs: the visible commands are classified per frame (18 cheap checks);
+  tiles that are not on the active tab's page are parked by this pass, never hidden, so the engine
+  keeps populating and enabling them.
+- **One source for draw, hit-test and layout**: presence and geometry come from
+  `ControlBar::phoneOverlays()` / `phoneMetrics()`, the same calls the touch layer uses, so the three
+  cannot drift. The pressed state is `TheAndroidOverlayPressed`, set by the touch layer, read by the
+  draw.
 - **Touch layer**: overlay buttons are armed on press and fire on release over them (groups: hold =
-  assign); the drawer footprint and the strip band swallow taps that find no window.
+  assign; tabs: `ControlBar::phoneSelectTab`); the drawer footprint, the resource pill and the
+  minimap block swallow taps that find no window; the top centre between them is battlefield.
 - **Placing a structure**: a tap on the battlefield while a structure is pending anchors and places
   it in one step through the engine's own placement checks (`AndroidPlacementTap`, the same
   construct order the PC sends), after moving the ghost there; camera gestures stay live while

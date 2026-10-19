@@ -83,6 +83,16 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
   bar's update, which returns early while nothing is selected. Taps on the battlefield release
   after 40 ms instead of 150 ms, so selecting a unit feels immediate. The touched tile's name no
   longer shows the `&` hotkey marker.
+- **Changed** the HUD to the owner's approved design (MOBILE‑UX‑SPEC §6.3): a round ☰ button and
+  one resource pill (coin, money with separators, power bar) top‑left; the minimap in a thin gold
+  rounded frame top‑right with the ★ rank badge (pulsing with the points to spend) beside it and
+  the general's powers as round buttons with cooldown rings under it; a round left column (IDLE
+  with the idle worker's own picture and count, ARMY, "+", the groups); the drawer as one rounded
+  bed with a chip row (portrait, name, health, count) over two rows of five tiles, each its picture
+  over its name with the price on the picture, and BASE / DEF / SUP or UNITS / TECH / MORE tabs for
+  menus larger than a page. Every shape is drawn from primitives (new Android‑only round‑shape
+  display calls); the engine's own buttons keep their input and get Android draw functions. The
+  superweapon and mission countdowns move with the layout and get a physical font size.
 
 ## Audio
 - **Fixed** total silence: `SDL3Main.cpp` forced desktop OpenAL drivers on Android (`__linux__`

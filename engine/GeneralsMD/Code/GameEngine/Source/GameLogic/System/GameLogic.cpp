@@ -3757,6 +3757,100 @@ extern __int64 Total_Load_3D_Assets;
 // ------------------------------------------------------------------------------------------------
 /** Update all objects in the world by invoking their update() methods. */
 // ------------------------------------------------------------------------------------------------
+
+#if defined(__ANDROID__)
+#include <chrono>
+#include <unordered_map>
+#include <vector>
+#include <algorithm>
+
+// @port Android: where a logic frame spends its time, for the late-game slowdowns on phones.
+// One line in ccg_log.txt per 150 logic frames (5 s of game time) of a battle: the average time of
+// each part of GameLogic::update, the parts of the slowest frame, and the update module types that
+// took the most time over the window.
+namespace
+{
+	typedef std::chrono::steady_clock LogicClock;
+
+	enum LogicPart { LP_SCRIPTS, LP_TERRAIN, LP_CRC, LP_COMMANDS, LP_OBJECTS, LP_AI, LP_BUILD, LP_PARTITION, LP_CLEANUP, LP_COUNT };
+	const char *const LogicPartNames[LP_COUNT] = { "scripts", "terrain", "crc", "commands", "objects", "ai", "build", "partition", "cleanup" };
+
+	struct LogicProfiler
+	{
+		LogicClock::time_point mark;
+		double cur[LP_COUNT] = {};
+		double sum[LP_COUNT] = {};
+		double worst[LP_COUNT] = {};
+		double worstTotal = 0.0;
+		Int frames = 0;
+		Int moduleCalls = 0;
+		std::unordered_map<NameKeyType, double> moduleMs;
+
+		void begin()
+		{
+			for (Int i = 0; i < LP_COUNT; ++i) cur[i] = 0.0;
+			mark = LogicClock::now();
+		}
+		void lap(LogicPart part)
+		{
+			const LogicClock::time_point now = LogicClock::now();
+			cur[part] += std::chrono::duration<double, std::milli>(now - mark).count();
+			mark = now;
+		}
+		void end(UnsignedInt frame)
+		{
+			double total = 0.0;
+			for (Int i = 0; i < LP_COUNT; ++i) { sum[i] += cur[i]; total += cur[i]; }
+			if (total > worstTotal)
+			{
+				worstTotal = total;
+				for (Int i = 0; i < LP_COUNT; ++i) worst[i] = cur[i];
+			}
+			if (++frames < 150)
+				return;
+
+			AsciiString line;
+			line.format("INFO: [Perf] logic frame %u avg ms:", frame);
+			for (Int i = 0; i < LP_COUNT; ++i)
+			{
+				AsciiString part;
+				part.format(" %s %.2f", LogicPartNames[i], sum[i] / frames);
+				line.concat(part);
+			}
+			AsciiString worstPart;
+			worstPart.format(" | worst %.1f ms:", worstTotal);
+			line.concat(worstPart);
+			for (Int i = 0; i < LP_COUNT; ++i)
+			{
+				if (worst[i] < 0.5) continue;
+				AsciiString part;
+				part.format(" %s %.1f", LogicPartNames[i], worst[i]);
+				line.concat(part);
+			}
+			std::vector<std::pair<double, NameKeyType> > top;
+			for (std::unordered_map<NameKeyType, double>::const_iterator it = moduleMs.begin(); it != moduleMs.end(); ++it)
+				top.push_back(std::make_pair(it->second, it->first));
+			std::sort(top.begin(), top.end());
+			std::reverse(top.begin(), top.end());
+			AsciiString calls;
+			calls.format(" | modules %d calls/frame, top ms/frame:", moduleCalls / frames);
+			line.concat(calls);
+			for (size_t i = 0; i < top.size() && i < 6; ++i)
+			{
+				AsciiString part;
+				part.format(" %s %.2f", KEYNAME(top[i].second).str(), top[i].first / frames);
+				line.concat(part);
+			}
+			fprintf(stderr, "%s\n", line.str());
+			*this = LogicProfiler();
+		}
+	};
+
+	LogicProfiler s_logicProfiler;
+	Bool s_logicProfiling = FALSE;
+}
+#endif
+
 void GameLogic::update()
 {
 	USE_PERF_TIMER(GameLogic_update)
@@ -3809,16 +3903,27 @@ void GameLogic::update()
 
 	PROFILER_PLOT("LogicFrame", static_cast<int64_t>(now));
 
+#if defined(__ANDROID__)
+	s_logicProfiling = isInGame() && !isInShellGame() && !m_startNewGame;
+	if (s_logicProfiling) s_logicProfiler.begin();
+#endif
+
 	// update (execute) scripts
 	{
 		TheScriptEngine->UPDATE();
 	}
+#if defined(__ANDROID__)
+	if (s_logicProfiling) s_logicProfiler.lap(LP_SCRIPTS);
+#endif
 
 	// Note - TerrainLogic update needs to happen after ScriptEngine update, but before object updates.  jba.
 	// This way changes in bridges are noted in the script engine before being cleared in TerrainLogic->update
 	{
 		TheTerrainLogic->UPDATE();
 	}
+#if defined(__ANDROID__)
+	if (s_logicProfiling) s_logicProfiler.lap(LP_TERRAIN);
+#endif
 
 	// force CRC calculation, so we can keep a cache of the last N CRCs.  We do this right where the recorder
 	// would be getting the CRC anyway, so replays can get the CRCs from the exact instant in time as the original.
@@ -3852,6 +3957,10 @@ void GameLogic::update()
 		DEBUG_LOG(("Appended %sCRC on frame %d: %8.8X", isPlayback ? "Playback " : "", m_frame, m_CRC));
 	}
 
+#if defined(__ANDROID__)
+	if (s_logicProfiling) s_logicProfiler.lap(LP_CRC);
+#endif
+
 	// collect stats
 	if(TheStatsCollector)
 	{
@@ -3867,6 +3976,9 @@ void GameLogic::update()
 	{
 		processCommandList( TheCommandList );
 	}
+#if defined(__ANDROID__)
+	if (s_logicProfiling) s_logicProfiler.lap(LP_COMMANDS);
+#endif
 
 #ifdef ALLOW_NONSLEEPY_UPDATES
 	{
@@ -3937,7 +4049,18 @@ void GameLogic::update()
 				//DEBUG_LOG(("calling update %08lx (%d %d)...",update,update->friend_getNextCallFrame(),update->friend_getNextCallPhase()));
 				m_curUpdateModule = u;
 
+#if defined(__ANDROID__)
+				const LogicClock::time_point moduleStart = s_logicProfiling ? LogicClock::now() : LogicClock::time_point();
+#endif
 				sleepLen = u->update();
+#if defined(__ANDROID__)
+				if (s_logicProfiling)
+				{
+					s_logicProfiler.moduleMs[u->getModuleNameKey()] +=
+						std::chrono::duration<double, std::milli>(LogicClock::now() - moduleStart).count();
+					++s_logicProfiler.moduleCalls;
+				}
+#endif
 				DEBUG_ASSERTCRASH(sleepLen > 0, ("you may not return 0 from update"));
 				if (sleepLen < 1)
 					sleepLen = UPDATE_SLEEP_NONE;
@@ -3953,21 +4076,33 @@ void GameLogic::update()
 	}
 
 	validateSleepyUpdate();
+#if defined(__ANDROID__)
+	if (s_logicProfiling) s_logicProfiler.lap(LP_OBJECTS);
+#endif
 
 	// update the Artificial Intelligence system
 	{
 		TheAI->UPDATE();
 	}
+#if defined(__ANDROID__)
+	if (s_logicProfiling) s_logicProfiler.lap(LP_AI);
+#endif
 
 	// production updates
 	{
 		TheBuildAssistant->UPDATE();
 	}
+#if defined(__ANDROID__)
+	if (s_logicProfiling) s_logicProfiler.lap(LP_BUILD);
+#endif
 
 	// update partition info
 	{
 		ThePartitionManager->UPDATE();
 	}
+#if defined(__ANDROID__)
+	if (s_logicProfiling) s_logicProfiler.lap(LP_PARTITION);
+#endif
 
 	//
 	// End of frame clean-up
@@ -3997,6 +4132,14 @@ void GameLogic::update()
 
 
 
+
+#if defined(__ANDROID__)
+	if (s_logicProfiling)
+	{
+		s_logicProfiler.lap(LP_CLEANUP);
+		s_logicProfiler.end(m_frame);
+	}
+#endif
 
 	// increment world time
 	if (!m_startNewGame)

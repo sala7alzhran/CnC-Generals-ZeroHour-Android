@@ -14,6 +14,29 @@ index 26afed4..7c6a555 100644
  
    wrc           = find_program('touch')
    wrc_generator = generator(wrc, output : [ '@BASENAME@_ignored.h' ], arguments : [ '@OUTPUT@' ] )
+diff --git a/src/d3d9/d3d9_interface.cpp b/src/d3d9/d3d9_interface.cpp
+index f0c0921..a211ba2 100644
+--- a/src/d3d9/d3d9_interface.cpp
++++ b/src/d3d9/d3d9_interface.cpp
+@@ -394,8 +394,17 @@ namespace dxvk {
+ 
+       hr = device->InitialReset(pPresentationParameters, pFullscreenDisplayMode);
+ 
+-      if (unlikely(FAILED(hr)))
++      if (unlikely(FAILED(hr))) {
++#ifdef __ANDROID__
++        // Destroy the half-initialised device now. Its implicit swapchain already owns a
++        // VkSurfaceKHR on the window, and Android allows one producer per ANativeWindow, so
++        // leaking it makes every later surface creation on that window fail (-22 / OOM).
++        // The destructor waits for the device and destroys the swapchain and surface.
++        device->AddRef();
++        device->Release();
++#endif
+         return hr;
++      }
+ 
+       *ppReturnedDeviceInterface = ref(device);
+     }
 diff --git a/src/dxvk/dxvk_presenter.cpp b/src/dxvk/dxvk_presenter.cpp
 index 38b8a2d..7088a90 100644
 --- a/src/dxvk/dxvk_presenter.cpp

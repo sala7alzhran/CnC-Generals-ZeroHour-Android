@@ -4,13 +4,17 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.text.format.Formatter;
+import android.view.DisplayCutout;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -90,7 +94,8 @@ public class SetupActivity extends Activity {
         mStatus.setTextSize(16);
         mStatus.setGravity(Gravity.CENTER);
         mStatus.setPadding(0, dp(16), 0, dp(16));
-        root.addView(mStatus);
+        root.addView(mStatus, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         mProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         mProgress.setMax(1000);
@@ -114,6 +119,25 @@ public class SetupActivity extends Activity {
         scroll.setBackgroundColor(Color.rgb(0xB0, 0x12, 0x12));
         scroll.addView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // targetSdk 35 draws edge-to-edge: keep the text clear of the navigation bar and cutout.
+        scroll.setOnApplyWindowInsetsListener((v, insets) -> {
+            int l, t, r, b;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Insets bars = insets.getInsets(
+                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                l = bars.left; t = bars.top; r = bars.right; b = bars.bottom;
+            } else {
+                l = insets.getSystemWindowInsetLeft(); t = insets.getSystemWindowInsetTop();
+                r = insets.getSystemWindowInsetRight(); b = insets.getSystemWindowInsetBottom();
+                DisplayCutout cutout = insets.getDisplayCutout();
+                if (cutout != null) {
+                    l = Math.max(l, cutout.getSafeInsetLeft());
+                    r = Math.max(r, cutout.getSafeInsetRight());
+                }
+            }
+            root.setPadding(dp(32) + l, dp(16) + t, dp(32) + r, dp(16) + b);
+            return insets;
+        });
         setContentView(scroll);
     }
 

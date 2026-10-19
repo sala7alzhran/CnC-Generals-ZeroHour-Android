@@ -1389,12 +1389,21 @@ bool DX8Wrapper::Set_Render_Device(int dev, int width, int height, int bits, int
 	** Set default for depth stencil format if auto Z buffer failed.
 	*/
 	if (_PresentParameters.AutoDepthStencilFormat==D3DFMT_UNKNOWN) {
+#if defined(__ANDROID__)
+		// @port Android: DXVK never exposes D3DFMT_D32 (no D3D9 driver did), so the desktop
+		// default below makes CreateDevice fail before the first frame. This fallback is reached
+		// when the colour/Z mode probes above come back empty (seen on a 2400x1080 Adreno phone).
+		// DXVK always provides D24S8 (as D32S8 where the GPU lacks D24S8), and it is also what
+		// Find_Z_Mode picks first when the probe works.
+		_PresentParameters.AutoDepthStencilFormat = (BitDepth==32) ? D3DFMT_D24S8 : D3DFMT_D16;
+#else
 		if (BitDepth==32) {
 			_PresentParameters.AutoDepthStencilFormat=D3DFMT_D32;
 		}
 		else {
 			_PresentParameters.AutoDepthStencilFormat=D3DFMT_D16;
 		}
+#endif
 	}
 
 	/*

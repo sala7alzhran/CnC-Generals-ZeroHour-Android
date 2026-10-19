@@ -40,6 +40,10 @@ them); taps anywhere else on the battlefield work as in the gesture table above.
 
 ## Menus, HUD and building placement
 
+**Smart touch.** The PC menus have small rows and arrows. In every menu (and in the pause menu),
+a tap that misses a control by up to 4 mm presses the nearest one, and a tap anywhere on a
+dropdown row opens it. You can tap at the text, not only at the little arrow.
+
 Wherever the finger is on a window rather than on the battlefield (menus, the command bar, the
 minimap, while placing a building, in cutscenes) a finger behaves like a mouse:
 

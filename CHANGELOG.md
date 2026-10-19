@@ -65,6 +65,14 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
   (red when unaffordable) and a padlock when locked (dimmed in colour instead of greyscale), the
   touched tile's name appears beside the drawer, money sits on one line in a pill, the power meter
   has a trough.
+- **Added** smart touch in menus (MOBILE‑UX‑SPEC Phase B‑1): a tap that lands on no control is
+  moved to the nearest button / slider / list / dropdown within 4 mm, and a tap on a dropdown's
+  text opens it through its arrow; the shift stays on the drag. Battles are unaffected unless the
+  pause menu is up.
+- **Fixed** the Skirmish colour column's `???` (now "Random"), menu labels missing from the retail
+  CSF showing as `MISSING: '…'` (now a name made from the key, e.g. "Custom Mission"), and the
+  per‑frame `D3DRS_PATCHSEGMENTS` DXVK warning that grew `ccg_log.txt` by ~13 KB/s (the state is
+  not set on Android).
 
 ## Audio
 - **Fixed** total silence: `SDL3Main.cpp` forced desktop OpenAL drivers on Android (`__linux__`

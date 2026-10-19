@@ -206,8 +206,15 @@ void PopulateColorComboBox(Int comboBox, GameWindow *comboArray[], GameInfo *myG
 	GadgetComboBoxReset(comboArray[comboBox]);
 
 	MultiplayerColorDefinition *def = TheMultiplayerSettings->getColor(PLAYERTEMPLATE_RANDOM);
+#if defined(__ANDROID__)
+	// GeneralsX @tweak Android 19/10/2026 The "any colour" entry reads "Random", like the random
+	// faction, instead of the retail "???" that players take for a missing string.
+	const char *randomColorLabel = "GUI:Random";
+#else
+	const char *randomColorLabel = "GUI:???";
+#endif
 	Int newIndex = GadgetComboBoxAddEntry(comboArray[comboBox],
-		(isObserver)?TheGameText->fetch("GUI:None"):TheGameText->fetch("GUI:???"), def->getColor());
+		(isObserver)?TheGameText->fetch("GUI:None"):TheGameText->fetch(randomColorLabel), def->getColor());
 	GadgetComboBoxSetItemData(comboArray[comboBox], newIndex, (void *)-1);
 
 	if (isObserver)

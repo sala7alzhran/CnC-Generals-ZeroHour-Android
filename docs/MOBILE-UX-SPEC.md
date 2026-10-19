@@ -279,17 +279,26 @@ the radar frame when there is no radar.
 
 ## 7. Menus and every other screen
 
-- **Smart touch (hit‑area expansion).** When a tap misses every control, pick the nearest
-  interactive control within ≈ 4 mm and press that. A whole dropdown row counts as tappable, not
-  only its arrow. One change in the touch→click layer fixes every PC screen at once.
-- **UI size setting.** Small / Medium / Large (default Large on phones). Implement it as a
-  scale on the engine's window layout (laid out in a virtual canvas, so the 4:3 canvas can be
-  made bigger relative to the screen and centred or anchored). If that turns out too invasive,
-  fall back to scaling the touch‑relevant screens only.
-- **Quick Battle screen.** One phone‑first screen with big cards: army/general, map (with
-  preview), opponent difficulty and count, starting cash, then Start. It feeds the existing
-  skirmish setup underneath. Keep the full Skirmish screen reachable for power users.
-- **Text:** a minimum on‑screen text height of ≈ 2.2 mm.
+- **Smart touch (hit-area expansion)** — Phase B-1, in the touch layer, for every screen outside a
+  battle and for the pause menu in a battle. When a finger lands on no interactive control, the
+  press moves to the nearest enabled gadget (button, check box, radio, slider, list, text entry,
+  tab, dropdown) within **4 mm**, to the point of it nearest the finger; when it lands on a
+  dropdown's text, the press moves to the dropdown's arrow, so a whole row opens its list. The shift
+  stays on the rest of that press, so a slider grabbed from 2 mm away follows the finger. A modal
+  dialog limits the search to itself, as the hit test does. No screen layout is touched, so every
+  PC screen is covered at once.
+- **UI size setting — dropped.** The `.wnd` layouts are authored on an 800 × 600 canvas that the
+  engine already stretches to the whole display (`GameWindowManagerScript.cpp`: × 3.0 horizontally,
+  × 1.8 vertically on 2400 × 1080), so there is no room to make the canvas bigger: a scale would push
+  the edge controls off the screen, and bigger fonts would not fit their 43 px rows. Smart touch
+  gives those rows the reach of ~10 mm targets instead, and the Quick Battle screen bypasses the
+  densest screen.
+- **Quick Battle screen** — Phase B-2. One phone-first screen with big cards: army/general, map,
+  opponents (count and difficulty), starting cash, then Start. It fills the engine's skirmish setup
+  (`TheSkirmishGameInfo`) and starts the game the way the Skirmish screen's Start does. The full
+  Skirmish screen stays reachable for power users.
+- **Text:** a minimum on-screen text height of ≈ 2 mm where the HUD draws its own text (overlay
+  labels are 1.9–3.6 mm); the PC screens keep their fonts.
 
 ## 8. Feedback and comfort
 
@@ -301,10 +310,12 @@ the radar frame when there is no radar.
 ## 9. Known small bugs to fix along the way
 
 - Solo Play menu shows `MISSING: 'GUI:CustomMission'` (a string missing from the retail CSF).
-  Provide a fallback label or hide the entry.
-- Skirmish colour column shows `???` instead of colour names.
+  **Fixed (B-1):** on Android a missing label reads as a name made from its key ("Custom Mission").
+- Skirmish colour column shows `???` instead of colour names. **Fixed (B-1):** that is the engine's
+  label for "any colour"; on Android it reads "Random", like the random faction.
 - DXVK logs `Unimplemented render state D3DRS_PATCHSEGMENTS` every frame, so `ccg_log.txt` grows
-  ~13 KB/s (~46 MB per hour). Rate‑limit that warning or lower the default log level in release.
+  ~13 KB/s (~46 MB per hour). **Fixed (B-1):** the state (N-patch tessellation, never rendered by
+  DXVK) is not set on Android.
 
 ## 10. Delivery: phases, each a PR with green CI
 
@@ -317,8 +328,10 @@ the radar frame when there is no radar.
   takes one long‑press‑drag; nothing regresses in menus.
 
 **Phase B: menus usable by finger**
-- Smart touch everywhere, the UI size setting, the Quick Battle screen, and the §9 bugs.
-- Accept when every Skirmish/Options control can be hit first try with a thumb.
+- B-1: smart touch everywhere and the §9 bugs. B-2: the Quick Battle screen. The UI size setting is
+  dropped (§7).
+- Accept when every Skirmish/Options control can be hit first try with a thumb, and a skirmish can
+  be started from Quick Battle in a handful of taps.
 
 **Phase C-1: smart HUD** (pulled ahead of Phase B at the owner's request; design in §6)
 - Full-height battlefield; the control bar's real windows re-laid-out into the top strip, minimap,

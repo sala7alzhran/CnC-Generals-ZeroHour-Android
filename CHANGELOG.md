@@ -24,6 +24,11 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
   full height (`m_viewportHeightScale = 1`), so folding never resizes the battlefield view.
 
 ## Menus
+- **Added** smart touch in menus: a tap that lands on no control moves to the nearest enabled
+  control within 4 mm, and a tap on a dropdown's text opens its list. A modal dialog limits the
+  search to itself. Never in a battle unless the pause menu is up.
+- **Added** finger-sized rows in dropdown lists (at least 7 % of the screen height, about 5 mm on a
+  phone; the text is centred). A list that would run off the bottom shows fewer rows and scrolls.
 - **Fixed** the first tap on the main menu after launch only waking the menu ("Solo Play" needed
   two taps): on Android the menu is woken right away, as the PC does on the first mouse movement.
 - **Fixed** the Skirmish colour column reading `???` (now "Random") and a label missing from the

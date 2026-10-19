@@ -67,6 +67,7 @@
 #include "GameClient/Display.h"
 #include "GameClient/VideoPlayer.h"
 #include <jni.h>   // density + haptics come from ZerohourActivity via SDL_GetAndroidJNIEnv()
+#include "GameClient/GadgetComboBox.h"   // smart touch: a dropdown's text part opens its list through the arrow button
 #endif
 
 // Extern globals for input devices (set by GameClient)
@@ -193,7 +194,9 @@ int          g_tfCount = 0;
 bool         g_leftPending = false;   // 1st finger down; left-down not yet committed
 bool         g_leftHeld    = false;   // a left-button-down was synthesized and is held
 SDL_FingerID g_leftId      = 0;
-float        g_leftSX = 0, g_leftSY = 0;
+float        g_leftSX = 0, g_leftSY = 0;        // where the press lands (after smart touch)
+float        g_leftRawX = 0, g_leftRawY = 0;    // where the finger really came down (tap-slop tests)
+float        g_leftOffX = 0, g_leftOffY = 0;    // smart-touch shift applied to this press's drags and release
 Uint64       g_leftDownMs  = 0;
 
 // Primary (first) finger in a battle. In camera mode the finger is not a mouse until we
@@ -705,6 +708,111 @@ bool cameraModeAt(float px, float py) {
 	return true;
 }
 
+// ------------------------------------------------------------ smart touch --
+// GeneralsX @feature Android smart touch 19/10/2026 (docs/MOBILE-UX-SPEC.md §7). The PC screens
+// are laid out for a mouse: rows and dropdown arrows of 2–3 mm. When a finger lands on no
+// interactive control, the press moves to the nearest interactive gadget within SMART_TOUCH_MM;
+// when it lands on a dropdown's text, it moves to the dropdown's arrow (which opens the list). So
+// every screen becomes tappable without touching its layout. Never in a battle unless the pause
+// menu is up: there a miss is the ground.
+const float SMART_TOUCH_MM = 4.0f;
+
+inline bool interactiveStyle(UnsignedInt style) {
+	return (style & (GWS_PUSH_BUTTON | GWS_RADIO_BUTTON | GWS_CHECK_BOX | GWS_VERT_SLIDER | GWS_HORZ_SLIDER
+	               | GWS_SCROLL_LISTBOX | GWS_ENTRY_FIELD | GWS_TAB_CONTROL | GWS_COMBO_BOX)) != 0;
+}
+// A dropdown's text box: the arrow button beside it is what opens the list.
+inline GameWindow *comboArrowFor(GameWindow *w) {
+	GameWindow *parent = w ? w->winGetParent() : nullptr;
+	if (parent && (parent->winGetInstanceData()->getStyle() & GWS_COMBO_BOX)
+	    && (w->winGetInstanceData()->getStyle() & GWS_ENTRY_FIELD))
+		return GadgetComboBoxGetDropDownButton(parent);
+	return nullptr;
+}
+inline void windowCentre(GameWindow *w, Int &x, Int &y) {
+	ICoord2D pos, size;
+	w->winGetScreenPosition(&pos.x, &pos.y);
+	w->winGetSize(&size.x, &size.y);
+	x = pos.x + size.x / 2;
+	y = pos.y + size.y / 2;
+}
+// The point of a window's rectangle nearest to (x, y), kept 2 px inside, and its squared distance.
+void nearestPointIn(GameWindow *w, Int x, Int y, Int &nx, Int &ny, float &d2) {
+	ICoord2D pos, size;
+	w->winGetScreenPosition(&pos.x, &pos.y);
+	w->winGetSize(&size.x, &size.y);
+	const Int x0 = pos.x + 2, x1 = pos.x + size.x - 3, y0 = pos.y + 2, y1 = pos.y + size.y - 3;
+	nx = x < x0 ? x0 : (x > x1 ? x1 : x);
+	ny = y < y0 ? y0 : (y > y1 ? y1 : y);
+	const float dx = (float)(nx - x), dy = (float)(ny - y);
+	d2 = dx * dx + dy * dy;
+}
+struct NearestGadget { GameWindow *win; float d2; Int x, y; };
+// Depth-first over a window and its children with the hit test's reachability rules: a hidden or
+// disabled window and everything below it are out; a no-input window is skipped, its children not.
+void nearestGadgetIn(GameWindow *w, Int x, Int y, NearestGadget &best) {
+	const UnsignedInt st = w->winGetStatus();
+	if (BitIsSet(st, WIN_STATUS_HIDDEN) || !BitIsSet(st, WIN_STATUS_ENABLED)) return;
+	if (!BitIsSet(st, WIN_STATUS_NO_INPUT) && interactiveStyle(w->winGetInstanceData()->getStyle())) {
+		Int nx, ny; float d2;
+		nearestPointIn(w, x, y, nx, ny, d2);
+		if (d2 < best.d2) { best.win = w; best.d2 = d2; best.x = nx; best.y = ny; }
+	}
+	for (GameWindow *c = w->winGetChild(); c; c = c->winGetNext()) nearestGadgetIn(c, x, y, best);
+}
+inline bool smartTouchActive() {
+	if (videoPlaying() || !TheWindowManager) return false;
+	return !inLiveGame() || (TheInGameUI && TheInGameUI->isQuitMenuVisible());
+}
+// Engine display coordinates -> window pixels (the inverse of toEngine).
+void fromEngine(Int ex, Int ey, float &px, float &py) {
+	float w, h; winSize(w, h);
+	Int dw = (TheDisplay && TheDisplay->getWidth())  ? (Int)TheDisplay->getWidth()  : (Int)w;
+	Int dh = (TheDisplay && TheDisplay->getHeight()) ? (Int)TheDisplay->getHeight() : (Int)h;
+	Int pbX = 0, pbY = 0, pbW = (Int)w, pbH = (Int)h;
+	if (TheDisplay && !TheDisplay->getViewportRect(pbX, pbY, pbW, pbH)) { pbX = 0; pbY = 0; pbW = (Int)w; pbH = (Int)h; }
+	if (dw <= 0) dw = 1;
+	if (dh <= 0) dh = 1;
+	px = (float)pbX + (float)ex * (float)pbW / (float)dw;
+	py = (float)pbY + (float)ey * (float)pbH / (float)dh;
+}
+// Moves a classic-mode press to where it was meant to land. Returns whether it moved.
+bool smartTouchAdjust(float &px, float &py) {
+	if (!smartTouchActive()) return false;
+	ICoord2D s; toEngine(px, py, s);
+	GameWindow *under = TheWindowManager->getWindowUnderCursor(s.x, s.y);
+	GameWindow *target = nullptr;
+	Int tx = s.x, ty = s.y;
+	if (under) {
+		if (GameWindow *arrow = comboArrowFor(under)) {
+			target = arrow;
+			windowCentre(arrow, tx, ty);
+		} else if (interactiveStyle(under->winGetInstanceData()->getStyle())) {
+			return false;   // already on a control
+		}
+	}
+	if (!target) {
+		float w, h; winSize(w, h);
+		const float dw = (TheDisplay && TheDisplay->getWidth()) ? (float)TheDisplay->getWidth() : w;
+		const float reach = mm(SMART_TOUCH_MM) * dw / (w > 0.0f ? w : 1.0f);   // in engine px
+		NearestGadget best = { nullptr, reach * reach, s.x, s.y };
+		if (GameWindow *modal = TheWindowManager->winGetModalWindow()) {
+			nearestGadgetIn(modal, s.x, s.y, best);
+		} else {
+			for (GameWindow *top = TheWindowManager->winGetWindowList(); top; top = top->winGetNext())
+				nearestGadgetIn(top, s.x, s.y, best);
+		}
+		if (!best.win) return false;
+		target = best.win; tx = best.x; ty = best.y;
+		if (GameWindow *arrow = comboArrowFor(target)) {
+			target = arrow;
+			windowCentre(arrow, tx, ty);
+		}
+	}
+	fromEngine(tx, ty, px, py);
+	return true;
+}
+
 // Keep synthesized drag coordinates off the engine's own 3 px screen-edge scroll band.
 inline void clampInsideEdges(float &px, float &py) {
 	float w, h; winSize(w, h);
@@ -779,7 +887,11 @@ void handleFingerDown(const SDL_TouchFingerEvent &tf) {
 			g_pm = PM_CLASSIC;
 			g_primaryId = tf.fingerID;
 			g_leftPending = true; g_leftHeld = false;
-			g_leftId = tf.fingerID; g_leftSX = px; g_leftSY = py;
+			g_leftId = tf.fingerID;
+			g_leftRawX = px; g_leftRawY = py;
+			g_leftSX = px; g_leftSY = py;
+			smartTouchAdjust(g_leftSX, g_leftSY);   // menus: land on the nearest control
+			g_leftOffX = g_leftSX - px; g_leftOffY = g_leftSY - py;
 			g_leftDownMs = SDL_GetTicks();
 		}
 	} else if (g_tfCount == 2) {
@@ -814,14 +926,16 @@ void handleFingerMotion(const SDL_TouchFingerEvent &tf) {
 
 	switch (g_pm) {
 	case PM_CLASSIC:
+		// the smart-touch shift of the press stays on the whole drag, so a slider grabbed through
+		// it follows the finger from where the press landed
 		if (g_leftPending && !g_leftHeld) {
-			if (dist2D(px, py, g_leftSX, g_leftSY) > mm(TAP_SLOP_MM)) {
-				synthLeftDown(g_leftSX, g_leftSY);   // anchor the drag at the touch point
+			if (dist2D(px, py, g_leftRawX, g_leftRawY) > mm(TAP_SLOP_MM)) {
+				synthLeftDown(g_leftSX, g_leftSY);   // anchor the drag at the press point
 				g_leftPending = false;
-				synthMotion(px, py);
+				synthMotion(px + g_leftOffX, py + g_leftOffY);
 			}
 		} else if (g_leftHeld) {
-			synthMotion(px, py);
+			synthMotion(px + g_leftOffX, py + g_leftOffY);
 		}
 		break;
 
@@ -903,7 +1017,7 @@ void handleFingerUp(const SDL_TouchFingerEvent &tf) {
 		switch (g_pm) {
 		case PM_CLASSIC:
 			if (g_leftHeld) {
-				releaseLeftHeld(px, py);
+				releaseLeftHeld(px + g_leftOffX, py + g_leftOffY);
 			} else if (g_leftPending) {
 				// fast tap: finger lifted before the commit-defer — press now, and the
 				// up is guaranteed to trail by >= CLICK_HOLD_MS so the click registers.

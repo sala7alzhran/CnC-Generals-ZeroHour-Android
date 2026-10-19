@@ -114,9 +114,9 @@ build_engine() {
 # DT_NEEDED entry is either packaged or an Android system library.
 stage() {
   local readelf="$TC/bin/llvm-readelf"
-  local system_libs=" libc.so libm.so libdl.so liblog.so libandroid.so libvulkan.so libOpenSLES.so
+  local -a system_libs=(libc.so libm.so libdl.so liblog.so libandroid.so libvulkan.so libOpenSLES.so
     libEGL.so libGLESv1_CM.so libGLESv2.so libGLESv3.so libz.so libjnigraphics.so libmediandk.so
-    libaaudio.so libamidi.so libnativewindow.so libsync.so libOpenMAXAL.so "
+    libaaudio.so libamidi.so libnativewindow.so libsync.so libOpenMAXAL.so)
   rm -rf "$JNILIBS" && mkdir -p "$JNILIBS"
 
   local main
@@ -136,7 +136,7 @@ stage() {
       done < <("$readelf" -d "$lib" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
     done
     for need in "${wanted[@]}"; do
-      [[ -f "$JNILIBS/$need" || "$system_libs" == *" $need "* ]] && continue
+      [[ -f "$JNILIBS/$need" || " ${system_libs[*]} " == *" $need "* ]] && continue
       if [[ "$need" != lib*.so ]]; then
         # The APK can only carry lib*.so, so a versioned soname would never be found on device.
         echo "ERROR: something links against '$need', which cannot be packaged in an APK" >&2

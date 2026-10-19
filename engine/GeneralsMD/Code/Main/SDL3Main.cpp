@@ -365,6 +365,10 @@ int main(int argc, char* argv[])
 		// handle all touch ourselves (1-finger select, 2-finger pan/zoom/command).
 		SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
 		SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
+		// The Back button / edge-swipe gesture reaches the game as ESC (SDL3Keyboard::getKey)
+		// instead of sending the whole game to the background, which an edge swipe during a
+		// battle otherwise does by accident.
+		SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
 #endif
 		if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
 			fprintf(stderr, "FATAL: Failed to initialize SDL3: %s\n", SDL_GetError());

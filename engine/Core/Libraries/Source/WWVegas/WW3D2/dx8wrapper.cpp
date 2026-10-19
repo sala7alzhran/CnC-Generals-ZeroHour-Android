@@ -836,6 +836,24 @@ bool DX8Wrapper::Create_Device()
 	Vertex_Processing_Behavior=(caps.DevCaps&D3DDEVCAPS_HWTRANSFORMANDLIGHT) ?
 		D3DCREATE_MIXED_VERTEXPROCESSING : D3DCREATE_SOFTWARE_VERTEXPROCESSING;
 
+#if defined(__ANDROID__)
+	// @port Android test hook: "hardware" in vertex_processing.txt (the app's files folder) creates
+	// the device with hardware vertex processing instead of mixed. Under DXVK a mixed device uses the
+	// large software-vertex-processing constant set; the game never switches to software processing
+	// itself (only DX8Caps::Init_Caps probes it).
+	if (FILE *vpFile = fopen("vertex_processing.txt", "r"))
+	{
+		char vpMode[16] = {};
+		if (fgets(vpMode, sizeof(vpMode), vpFile) != nullptr && strncmp(vpMode, "hardware", 8) == 0
+			&& (caps.DevCaps & D3DDEVCAPS_HWTRANSFORMANDLIGHT))
+		{
+			Vertex_Processing_Behavior = D3DCREATE_HARDWARE_VERTEXPROCESSING;
+			fprintf(stderr, "INFO: [Perf] hardware vertex processing (vertex_processing.txt)\n");
+		}
+		fclose(vpFile);
+	}
+#endif
+
 	// enable this when all 'get' dx calls are removed KJM
 	/*if (caps.DevCaps&D3DDEVCAPS_PUREDEVICE)
 	{

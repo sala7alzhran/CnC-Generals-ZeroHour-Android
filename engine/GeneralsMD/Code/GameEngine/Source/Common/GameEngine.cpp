@@ -108,6 +108,79 @@
 
 #include "Common/version.h"
 
+#if defined(__ANDROID__)
+#include <chrono>
+
+// @port Android: frame-time statistics, one line in ccg_log.txt per 5 seconds of a battle, to see
+// where slow moments come from on a phone: the game logic (TheGameLogic->UPDATE, 30 times a second
+// when the game keeps up), the client update that draws the frame, or the pause between frames.
+namespace
+{
+	typedef std::chrono::steady_clock PerfClock;
+
+	inline double msBetween(PerfClock::time_point a, PerfClock::time_point b)
+	{
+		return std::chrono::duration<double, std::milli>(b - a).count();
+	}
+
+	struct PerfWindow
+	{
+		PerfClock::time_point start;
+		Int frames = 0, logicFrames = 0, slowFrames = 0;
+		double intervalMax = 0, clientSum = 0, clientMax = 0, logicSum = 0, logicMax = 0;
+	};
+
+	PerfWindow s_perf;
+	PerfClock::time_point s_lastFrameStart;
+	Bool s_perfStarted = FALSE;
+
+	// One frame of GameEngine::update: clientMs for TheGameClient->UPDATE, logicMs for the logic
+	// step or < 0 when no logic frame ran.
+	void androidPerfFrame(PerfClock::time_point frameStart, double clientMs, double logicMs)
+	{
+		const double interval = s_perfStarted ? msBetween(s_lastFrameStart, frameStart) : 0.0;
+		s_lastFrameStart = frameStart;
+		s_perfStarted = TRUE;
+
+		if (!TheGameLogic || !TheGameLogic->isInGame() || TheGameLogic->isInShellGame())
+		{
+			s_perf = PerfWindow();
+			s_perf.start = frameStart;
+			return;
+		}
+		if (s_perf.frames == 0)
+			s_perf.start = frameStart;
+
+		++s_perf.frames;
+		if (interval > s_perf.intervalMax) s_perf.intervalMax = interval;
+		if (interval > 50.0) ++s_perf.slowFrames;   // a visible hitch
+		s_perf.clientSum += clientMs;
+		if (clientMs > s_perf.clientMax) s_perf.clientMax = clientMs;
+		if (logicMs >= 0.0)
+		{
+			++s_perf.logicFrames;
+			s_perf.logicSum += logicMs;
+			if (logicMs > s_perf.logicMax) s_perf.logicMax = logicMs;
+		}
+
+		const double elapsed = msBetween(s_perf.start, PerfClock::now());
+		if (elapsed < 5000.0)
+			return;
+
+		const double seconds = elapsed / 1000.0;
+		fprintf(stderr, "INFO: [Perf] frame %u: fps %.0f, logic %.1f/s | draw avg %.1f max %.1f ms | "
+			"logic avg %.1f max %.1f ms | longest gap %.0f ms, gaps > 50 ms: %d | objects %u, particles %u\n",
+			TheGameLogic->getFrame(), s_perf.frames / seconds, s_perf.logicFrames / seconds,
+			s_perf.clientSum / s_perf.frames, s_perf.clientMax,
+			s_perf.logicFrames ? s_perf.logicSum / s_perf.logicFrames : 0.0, s_perf.logicMax,
+			s_perf.intervalMax, s_perf.slowFrames,
+			TheGameLogic->getObjectCount(),
+			TheParticleSystemManager ? TheParticleSystemManager->getParticleCount() : 0u);
+		s_perf = PerfWindow();
+	}
+}
+#endif
+
 
 //-------------------------------------------------------------------------------------------------
 
@@ -991,6 +1064,11 @@ DECLARE_PERF_TIMER(GameEngine_update)
  */
 void GameEngine::update()
 {
+#if defined(__ANDROID__)
+	const PerfClock::time_point frameStart = PerfClock::now();
+	double clientMs = 0.0;
+	double logicMs = -1.0;
+#endif
 	USE_PERF_TIMER(GameEngine_update)
 	{
 		{
@@ -1002,7 +1080,13 @@ void GameEngine::update()
 			/// @todo Move audio init, update, etc, into GameClient update
 
 			TheAudio->UPDATE();
+#if defined(__ANDROID__)
+			const PerfClock::time_point clientStart = PerfClock::now();
+#endif
 			TheGameClient->UPDATE();
+#if defined(__ANDROID__)
+			clientMs = msBetween(clientStart, PerfClock::now());
+#endif
 			TheMessageStream->propagateMessages();
 
 			if (TheNetwork != nullptr)
@@ -1017,8 +1101,14 @@ void GameEngine::update()
 
 		if (canUpdateLogic)
 		{
+#if defined(__ANDROID__)
+			const PerfClock::time_point logicStart = PerfClock::now();
+#endif
 			TheGameClient->step();
 			TheGameLogic->UPDATE();
+#if defined(__ANDROID__)
+			logicMs = msBetween(logicStart, PerfClock::now());
+#endif
 		}
 		else if (canUpdateScript)
 		{
@@ -1027,6 +1117,9 @@ void GameEngine::update()
 			TheScriptEngine->UPDATE();
 		}
 	}
+#if defined(__ANDROID__)
+	androidPerfFrame(frameStart, clientMs, logicMs);
+#endif
 }
 
 // Horrible reference, but we really, really need to know if we are windowed.

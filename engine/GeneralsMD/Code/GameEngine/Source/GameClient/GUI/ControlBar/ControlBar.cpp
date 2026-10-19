@@ -890,7 +890,7 @@ ControlBar::ControlBar()
 	m_isObserverCommandBar = FALSE;
 #if defined(__ANDROID__)
 	m_phoneLayoutDirty = TRUE;
-	m_phoneMetrics = AndroidHud::computeMetrics( 1, 1, 15.0f, FALSE );
+	m_phoneMetrics = AndroidHud::computeMetrics( 1, 1, 15.0f, FALSE, 0 );
 	m_phoneDrawerSignature = 0;
 	m_phonePowerSignature = 0;
 	m_phoneRows = 0;

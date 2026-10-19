@@ -87,7 +87,7 @@ using AndroidHud::Rect;
 namespace Palette = AndroidHud::Palette;
 
 const UnsignedInt DRAWER_SLIDE_MS = 160;   ///< the drawer slides in from the right edge over this long
-const Real TWO_PI = 6.2831853f;
+const Real kTwoPi = 6.2831853f;   // (TWO_PI is a macro in the engine's math headers)
 
 inline UnsignedInt nowMs()
 {
@@ -357,7 +357,7 @@ void drawStarGlyph( const Rect &r, UnsignedInt color )
 	for( Int i = 1; i <= 10; ++i )
 	{
 		const Real rad = (i & 1) ? inner : outer;
-		const Real a = TWO_PI * (Real)i / 10.0f;
+		const Real a = kTwoPi * (Real)i / 10.0f;
 		const Real nx = cx + rad * sinf( a ), ny = cy - rad * cosf( a );
 		TheDisplay->drawFillTriangle( (Int)cx, (Int)cy, (Int)px, (Int)py, (Int)nx, (Int)ny, color );
 		px = nx;

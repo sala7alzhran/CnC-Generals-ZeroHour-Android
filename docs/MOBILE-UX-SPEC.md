@@ -101,40 +101,122 @@ Notes:
   pans the camera at a steady speed.
 - **Settings.** Keep one "Camera speed" multiplier for fling strength and edge‑pan speed only.
 
-## 6. Battle HUD (target layout, landscape, two thumbs)
+## 6. Battle HUD: the smart HUD (design, landscape, two thumbs)
+
+### 6.1 The problem, measured
+
+The original command bar is a 4:3 strip that is always on screen and takes the bottom 20 % of the
+view (`ViewportHeightScale = 0.8`), with the battlefield squeezed above it. On the phone it reads
+as a third of the usable height, it is dense with 5 mm targets, and most of it is empty most of the
+time: the command grid is blank whenever nothing is selected, which is most of a match.
+
+Modern mobile strategy games (Company of Heroes mobile, Total War mobile, Red Alert iOS, Northgard,
+Bad North) all converge on the same answer: **the battlefield gets the whole screen; controls appear
+when and where they are needed and sit in the thumb zones; nothing that is rarely used is permanent.**
+
+### 6.2 What the owner must still be able to do
+
+Everything the bar does stays reachable, through the engine's own data and code paths so every
+faction, general and mod keeps working: build structures (dozer/worker), train units and buy
+upgrades (factory, with the production queue and cancel), unit abilities, generals' powers (the
+`GenPowersShortcutBar` of the chosen general, e.g. Super Weapon's or Laser's), promotions
+(rank/science screen), sell and repair, rally points, evacuate/stop for garrisons, cancel
+construction, beacons and chat in multiplayer, the radar/minimap with its attack glow, money and
+power. The engine populates all of these into a fixed set of `GameWindow` buttons
+(`ControlBar.wnd:ButtonCommand01..14`, `ButtonQueue01..09`, …) from `CommandSet` data and processes
+their clicks itself. **The HUD therefore re-lays-out those real windows at runtime**; it does not
+re-implement commands. (The `.wnd` layout files are EA game data and cannot be shipped modified.)
+
+### 6.3 Layout
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ [☰]  $10000  ⚡power                              [minimap ▣] (collapsible)│
-│                                                                          │
-│ [1]                                                                      │
-│ [2]   control groups: tap = select,          the battlefield              │
-│ [3]   tap again quickly = centre camera,                                  │
-│ [+]   long-press = assign current selection                               │
-│                                                       ┌──────────────────┐│
-│ [ALL ARMY]  [IDLE]                                    │ build / command  ││
-│                                                       │ drawer (big tiles)││
-└───────────────────────────────────────────────────────┴──────────────────┘┘
+┌────────────────────────────────────────────────────────────────────────────────┐
+│[☰] [$ 12,500] [⚡▮▮▮▮▯▯] [★]   [⚡ powers: ◻ ◻ ◻ … ]              ┌──────────┐│ top strip
+│[1]                                                                 │ minimap  ││
+│[2]                                                                 └──────────┘│
+│[3]                       the battlefield, full height          ┌──────────────┐│
+│[4]                                                             │ portrait|queue││ drawer
+│                                                                │  ◻   ◻   ◻   ││ (only while
+│[ALL]                                                           │  ◻   ◻   ◻   ││  something
+│[IDLE]                                                          │  ◻   ◻   ◻   ││  is selected)
+└────────────────────────────────────────────────────────────────┴──────────────┘┘
 ```
 
-- **Left edge (left thumb):** 3–5 control‑group buttons plus "+" to make a new group, a
-  **Select whole army** button, and an **Idle units/dozers** button (cycles and centres the
-  camera).
-- **Right edge (right thumb): the command drawer.** Replace the 4:3 command bar as the primary
-  surface on phones with a drawer of large tiles (≥ 9 mm, ideally 12 mm). The tiles show what the
-  current selection can do: build structures (dozer), train units (factory), abilities (unit).
-  Tabs on top when the selection is mixed. Each tile shows its cost, a progress ring and a queue
-  count. It's driven by the same `CommandButton` data the original bar uses, so it stays in sync
-  with every faction and general.
-- **Building placement.** Tap a structure tile, then a ghost follows the finger. Lift to place
-  (red if invalid), with ✓ / ✗ / rotate buttons near the right thumb. Edge‑pan is active while
-  placing.
-- **The original command bar:** hide it on phones once the drawer covers its functions. Until
-  then, at least enlarge its hit areas (§7).
-- **Top strip:** money, power, menu button and a collapsible bigger minimap. Notifications
-  ("Base under attack") become tappable toasts that jump the camera.
-- **Visuals:** thicker selection rings and bigger health bars on Android, and a short ground
-  marker where an order was given.
+All sizes come from the display density (§3): a **tile is 9.5 mm**, gaps 0.6 mm, the top strip
+≈ 6 mm, the minimap 23 × 17 mm. On the POCO F7 Pro (15.5 px/mm) a tile is 147 px.
+
+**Top strip (always, translucent band, left thumb reach):**
+- **☰ menu** — the existing Android overlay button, enlarged to 9 mm (it was 3.6 mm tall).
+- **Money** (`MoneyDisplay`, bigger font) and the **power bar** (`PowerWindow`, the engine's own
+  green/yellow/red bar). Both are small and read-only, so they may sit top-centre-left.
+- **★ Generals star** (`ButtonGeneral`): opens the promotion/science screen; the engine flashes it
+  when points are available. The experience bar itself is dropped (the flash is the signal).
+- **Powers row** (`GenPowersShortcutBar*.wnd`, up to 11 tiles of 7.5 mm): shown by the engine only
+  when the player has a power; each tile shows the engine's ready clock and multiplier. Top-centre
+  is acceptable because powers are used occasionally and always need a target tap afterwards.
+- **Chat/diplomacy** and **beacon** buttons: multiplayer only, small, at the end of the strip.
+
+**Minimap (top-right, 23 × 17 mm):** the engine's radar window (`LeftHUD`) moved and resized; it
+keeps its own aspect letterboxing, its tap → jump camera / move / attack-move logic (`LeftHUDInput`)
+and the "base under attack" glow (`WinUAttack`). A later step makes it collapsible.
+
+**Left column (left thumb): 4 control groups, ALL, IDLE** — Android overlay buttons (like ☰):
+- **Group 1–4**: tap = select the group (`MSG_META_SELECT_TEAMn`; the engine centres the camera on
+  a second quick tap), **long-press (haptic) = assign the current selection**
+  (`MSG_META_CREATE_TEAMn`). A group tile is dimmed while empty.
+- **ALL**: select every unit (`MSG_META_SELECT_ALL`).
+- **IDLE**: select the next idle worker/dozer and centre on it (`MSG_META_SELECT_NEXT_IDLE_WORKER`);
+  dimmed when none is idle (`getIdleWorkerCount()`).
+
+**Right drawer (right thumb): the command tiles.** Visible only while the engine's context switch
+shows one of its context panels (`CommandWindow`, `ProductionQueueWindow`, `UnderConstructionWindow`,
+`OCLTimerWindow`, `BeaconWindow`), i.e. only while something is selected that has commands:
+- `ButtonCommand01..14` become **9.5 mm tiles in a 3-column grid**, bottom-anchored at the right
+  edge (slot order left→right, top→bottom, so slot 1 is where the PC's first button is). The
+  engine already decides what each tile shows — unit, structure, upgrade, ability, sell, repair,
+  rally point, stop/evacuate for garrisons, common commands for a mixed selection — and already
+  greys unaffordable, clocks not-ready, checks active and hides unused slots. Button art is
+  stretched to the tile by the renderer.
+- Above the grid, the **portrait** (`CameoWindow` + the 5 veterancy/upgrade cameos) *or* the
+  **production queue** (`ButtonQueue01..09`, 2 rows of 5.5 mm tiles, first one with the progress
+  clock); the engine already swaps those two while producing.
+- The under-construction (cancel + percent), OCL-timer and beacon panels occupy the same area.
+- The drawer panels get a translucent dark background with the faction's border colour, drawn by
+  a custom draw function on the panel window, and swallow taps on their empty parts so a unit
+  under the drawer is never hit by accident.
+
+**Gone on phones:** the bar artwork (background/foreground/top/grid draws go see-through), the
+collapse button (`ButtonLarge`), the bar's own idle-worker and options buttons (replaced by the left
+column and ☰), the experience bar.
+
+### 6.4 Mechanics
+
+- A **layout pass in `ControlBar`** (Android only, `ControlBarPhoneLayout.cpp`) runs whenever the
+  bar is (re)built, a faction scheme is applied or the stage changes (those are the moments the
+  engine itself repositions windows): the root `ControlBarParent` is resized to the whole display
+  and made see-through + no-input so empty areas pass taps to the battlefield; every window of the
+  tree is made see-through + no-input except the functional leaves, which are placed by the table
+  above; the five panel windows get the panel draw/input functions. The layout code reads
+  `TheAndroidPixelsPerMm`, published by the touch layer at start-up.
+- The **tactical view is always full height** on Android (`setScaledViewportHeight` → full), and
+  `ShowControlBar`/`HideControlBar` are immediate (no slide animation that would fight the pass).
+- The **left column and ☰** are overlays: drawn in `W3DInGameUI` after the window system, hit-tested
+  in the touch layer, with geometry from one shared header (`AndroidHud.h`) so draw, hit-test and
+  layout can never drift apart.
+- Nothing allocates per frame; the pass costs a few dozen `winSetPosition`/`winSetSize` calls and
+  runs only when dirty.
+
+### 6.5 Later steps (not in the first HUD PR)
+
+- **Building placement**: a ghost that follows the finger with ✓ / ✗ / rotate buttons near the
+  right thumb, edge-pan while placing (today: tap a structure tile, then tap the ground; two-finger
+  tap cancels).
+- Collapsible minimap; tappable "base under attack" toasts that jump the camera.
+- Command wheel on long-press with a selection (attack-move, force fire, guard, stop, waypoint).
+- Group tile badges (unit count), a left-handed mirror option, haptics on orders and placement,
+  thicker selection rings and bigger health bars, an order ground marker.
+- Phone-sized rank/science screen (it opens over the battlefield but is laid out for 4:3) — Phase B's
+  UI-size setting and smart touch cover it.
 
 ## 7. Menus and every other screen
 
@@ -179,10 +261,15 @@ Notes:
 - Smart touch everywhere, the UI size setting, the Quick Battle screen, and the §9 bugs.
 - Accept when every Skirmish/Options control can be hit first try with a thumb.
 
-**Phase C: phone HUD**
-- Control groups, select‑army and idle buttons, the command/build drawer, placement flow,
-  command wheel, haptics, visual feedback, and the left‑handed option.
-- Accept when a full skirmish can be played without touching the original command bar.
+**Phase C-1: smart HUD** (pulled ahead of Phase B at the owner's request; design in §6)
+- Full-height battlefield; the control bar's real windows re-laid-out into the top strip, minimap,
+  powers row and right drawer; left column with control groups, ALL and IDLE; bigger ☰.
+- Accept when: a full skirmish (including a general with powers) can be played with no bar on
+  screen while nothing is selected; building, training, upgrades, powers, promotion, sell/repair,
+  rally point and the minimap all work from the new positions; every HUD control is ≥ 9 mm.
+
+**Phase C-2: HUD polish** — placement flow with ✓/✗/rotate, command wheel, collapsible minimap,
+toasts, haptics on orders, visual feedback, group badges, left‑handed option (§6.5).
 
 For each PR: describe exactly what to try on the phone. The owner's local session installs the
 CI APK on the POCO F7 Pro, plays, and reports back with screenshots and logs.

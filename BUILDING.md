@@ -13,6 +13,13 @@ You also need to supply your own **game data** to actually run it (see
 > Redmi (Mali‑G57, `arm64-v8a`, Android 14+). It works the same on Linux/macOS hosts with the
 > matching toolchains.
 
+> **CI builds everything from a clean checkout.** `.github/workflows/android-ci.yml` runs
+> `scripts/ci/build-android.sh` (DXVK + vcpkg deps + engine + `jniLibs` staging) and then
+> `./gradlew assembleDebug`, and uploads the engine-only debug APK as an artifact. The script runs
+> the same way on any Linux x86_64 machine with the NDK, a bootstrapped vcpkg, meson and glslang.
+> Pinned versions live in `engine/vcpkg.json` (vcpkg baseline), `scripts/ci/versions.env` (DXVK,
+> SDL3 headers) and the workflow (`NDK_VERSION`, SDK 35).
+
 ## Prerequisites
 
 | Tool | Version used | Notes |

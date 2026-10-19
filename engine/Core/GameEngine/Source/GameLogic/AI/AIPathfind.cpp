@@ -6085,8 +6085,15 @@ void Pathfinder::processPathfindQueue()
 		if (obj) {
 			AIUpdateInterface *ai = obj->getAIUpdateInterface();
 			if (ai) {
+				const Int cellsBefore = m_cumulativeCellsAllocated;
 				ai->doPathfind(this);
 				pathsFound++;
+#if !RETAIL_COMPATIBLE_CRC
+				// GeneralsX @performance Android 20/10/2026 A search that alone used up this frame's cell
+				// budget makes the unit wait a second before its next one (AIUpdateInterface::isRepathTooSoon).
+				if (m_cumulativeCellsAllocated != cellsBefore)
+					ai->setLastPathfindExpensive(m_cumulativeCellsAllocated - cellsBefore >= (Int)PATHFIND_CELLS_PER_FRAME);
+#endif
 			}
 		}
 		m_queuePRHead = m_queuePRHead+1;

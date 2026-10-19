@@ -888,6 +888,10 @@ ControlBar::ControlBar()
 	m_commandSets = nullptr;
 	m_controlBarSchemeManager = nullptr;
 	m_isObserverCommandBar = FALSE;
+#if defined(__ANDROID__)
+	m_androidLastHasSelection = -1;
+	m_androidUserChoseStage = FALSE;
+#endif
 	m_observerLookAtPlayer = nullptr;
 	m_observedPlayer = nullptr;
 	m_buildToolTipLayout = nullptr;
@@ -1324,6 +1328,10 @@ void ControlBar::reset()
 	m_displayedOCLTimerSeconds = 0;
 
 	m_isObserverCommandBar = FALSE; // reset us to use a normal command bar
+#if defined(__ANDROID__)
+	m_androidLastHasSelection = -1;
+	m_androidUserChoseStage = FALSE;
+#endif
 	m_observerLookAtPlayer = nullptr;
 	m_observedPlayer = nullptr;
 
@@ -1426,6 +1434,10 @@ void ControlBar::update()
 					window->winHide(TRUE);
 			}
 		}
+
+#if defined(__ANDROID__)
+	updateAndroidAutoHide();
+#endif
 
 	if(m_animateWindowManagerForGenShortcuts)
 		m_animateWindowManagerForGenShortcuts->update();
@@ -3014,6 +3026,10 @@ void ControlBar::togglePurchaseScience()
 
 void ControlBar::toggleControlBarStage()
 {
+#if defined(__ANDROID__)
+	// The player tapped the bar's own up/down arrow: keep their choice until the selection changes.
+	m_androidUserChoseStage = TRUE;
+#endif
 	if(m_currentControlBarStage == CONTROL_BAR_STAGE_DEFAULT )
 		switchControlBarStage(CONTROL_BAR_STAGE_LOW);
 	else
@@ -3096,6 +3112,81 @@ void ControlBar::setHiddenControlBar()
 	m_currentControlBarStage = CONTROL_BAR_STAGE_HIDDEN;
 	m_contextParent[ CP_MASTER ]->winHide(TRUE);
 }
+
+#if defined(__ANDROID__)
+// GeneralsX @feature Android auto-hide control bar 19/10/2026 On a phone the full control bar covers
+// about a third of the screen. With nothing selected it has nothing to command, so it folds down to
+// the game's own "low" stage (the thin top rail with money, power and the up arrow, as on the PC when
+// the player minimizes it). Selecting a unit or building brings the full bar back. A tap on the bar's
+// up/down arrow wins until the selection changes. Cinematics and scripts that hide the whole bar, the
+// squished stage and the observer bar are left alone. Client UI only; game logic is untouched.
+// Logs one line to the app log (stderr -> ccg_log.txt) whenever the auto-hide decision changes,
+// so a phone run shows why the bar did or didn't fold.
+static void logAndroidAutoHide(const char *why, Int selectCount, Int stage, Int masterY)
+{
+	static const char *lastWhy = nullptr;
+	static Int lastSel = -2, lastStage = -2, lastY = -100000;
+	const Int sel = selectCount > 0 ? 1 : 0;
+	if (why == lastWhy && sel == lastSel && stage == lastStage && masterY == lastY)
+		return;
+	lastWhy = why; lastSel = sel; lastStage = stage; lastY = masterY;
+	fprintf(stderr, "INFO: [AutoHideBar] %s selectCount=%d stage=%d masterY=%d\n", why, selectCount, stage, masterY);
+	fflush(stderr);
+}
+
+void ControlBar::updateAndroidAutoHide()
+{
+	GameWindow *master = m_contextParent[ CP_MASTER ];
+	Int masterX = 0, masterY = -1;
+	if (master != nullptr)
+		master->winGetPosition(&masterX, &masterY);
+	const Int selectCount = TheInGameUI != nullptr ? TheInGameUI->getSelectCount() : -1;
+
+	if (m_isObserverCommandBar || TheInGameUI == nullptr || TheGameLogic == nullptr)
+	{
+		logAndroidAutoHide("skip: observer or no UI", selectCount, m_currentControlBarStage, masterY);
+		return;
+	}
+	if (!TheGameLogic->isInInteractiveGame())
+	{
+		logAndroidAutoHide("skip: not in an interactive game", selectCount, m_currentControlBarStage, masterY);
+		return;
+	}
+	if (master == nullptr || master->winIsHidden())
+	{
+		logAndroidAutoHide("skip: bar hidden by game/script", selectCount, m_currentControlBarStage, masterY);
+		return;
+	}
+	if (m_currentControlBarStage != CONTROL_BAR_STAGE_DEFAULT && m_currentControlBarStage != CONTROL_BAR_STAGE_LOW)
+	{
+		logAndroidAutoHide("skip: bar in another stage", selectCount, m_currentControlBarStage, masterY);
+		return;
+	}
+
+	const Int hasSelection = (selectCount > 0) ? 1 : 0;
+	if (hasSelection != m_androidLastHasSelection)
+	{
+		m_androidLastHasSelection = hasSelection;
+		m_androidUserChoseStage = FALSE;
+	}
+	if (m_androidUserChoseStage)
+	{
+		logAndroidAutoHide("skip: player chose with the arrow", selectCount, m_currentControlBarStage, masterY);
+		return;
+	}
+
+	// The general's promotion screen lives on the bar, so keep the bar up while it is open.
+	GameWindow *purchaseScience = m_contextParent[ CP_PURCHASE_SCIENCE ];
+	const Bool scienceOpen = purchaseScience != nullptr && !purchaseScience->winIsHidden();
+
+	const ControlBarStages wanted = (hasSelection || scienceOpen) ? CONTROL_BAR_STAGE_DEFAULT : CONTROL_BAR_STAGE_LOW;
+	if (m_currentControlBarStage != wanted)
+		switchControlBarStage(wanted);
+
+	master->winGetPosition(&masterX, &masterY);
+	logAndroidAutoHide(scienceOpen ? "applied (promotion screen open)" : "applied", selectCount, m_currentControlBarStage, masterY);
+}
+#endif
 // removed from multiplayer test
 //void ControlBar::showCommandMarkers()
 //{

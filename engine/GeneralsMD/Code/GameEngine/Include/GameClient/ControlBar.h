@@ -764,6 +764,15 @@ public:
 
 	const Image *getStarImage();
 
+#if defined(__ANDROID__)
+private:
+	void updateAndroidAutoHide();
+
+	Int m_androidLastHasSelection;		///< -1 until the first update, then 0/1
+	Bool m_androidUserChoseStage;		///< the player toggled the bar since the last selection change
+public:
+#endif
+
 	Color getBorderColor(){return m_commandBarBorderColor;}
 	void updateBorderColor( Color color) {m_commandBarBorderColor = color;	}
 

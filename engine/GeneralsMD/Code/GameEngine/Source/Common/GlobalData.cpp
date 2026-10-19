@@ -1300,6 +1300,13 @@ void GlobalData::parseCustomDefinition()
 		// TheSuperHackers @tweak xezon 03/08/2025 Force full viewport for 'Control Bar Pro' Addons like GenTool did it.
 		m_viewportHeightScale = 1.0f;
 	}
+#if defined(__ANDROID__)
+	// GeneralsX @feature Android auto-hide control bar 19/10/2026 On phones the control bar folds
+	// down to its thin "low" strip whenever nothing is selected (ControlBar::updateAndroidAutoHide).
+	// The world is always drawn full height behind the bar, so showing or folding the bar never
+	// resizes the battlefield view under the player's finger.
+	m_viewportHeightScale = 1.0f;
+#endif
 }
 
 UnsignedInt GlobalData::generateExeCRC()

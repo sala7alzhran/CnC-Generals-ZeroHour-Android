@@ -18,6 +18,12 @@ The port ships a custom multi-touch scheme (there is no mouse). See
 | **☰ button** (top-left) | Open the in-game / pause menu (acts as the **ESC** key). |
 | **▶▶ button** (top-right, during a cutscene) | Skip the cutscene. |
 
+**The command bar folds away by itself.** With nothing selected, the game's command bar folds down
+to its thin top rail (money, power and the up arrow), so the battlefield gets the whole screen.
+Select a unit or building and the full bar comes back; deselect and it folds again. Tapping the
+bar's up/down arrow overrides this until the selection changes. The battlefield is always drawn
+full height behind the bar, so the view never jumps when the bar folds or unfolds.
+
 A battle starts about ⅓ zoomed in from the widest view, so units are readable; pinch out to see
 more. The zoom range on phones is roughly 70–550 world units above the ground (the PC default on
 a wide screen was about 190–590).

@@ -8,6 +8,7 @@
     <string name="setup_scanning">جارٍ فحص ملفات اللعبة…</string>
     <string name="setup_copying">جارٍ نسخ ملفات اللعبة…\n%1$s\n%2$s من %3$s</string>
     <string name="setup_unzipping">جارٍ فك ضغط ملف zip…\n%1$s\n%2$s من %3$s</string>
+    <string name="setup_optimizing">جارٍ تصغير ملفات الصوت…\n%1$s\n%2$s من %3$s</string>
     <string name="setup_done">تم تثبيت ملفات اللعبة (%1$s).\n\nيمكنك الآن حذف النسخة التي وضعتها على الهاتف لتوفير المساحة.</string>
     <string name="setup_err_missing">هذه الملفات ناقصة:\n%1$s\n\nاختر مجلد Zero Hour الذي فيه INIZH.big والمجلد Data.</string>
     <string name="setup_err_missing_base">الملفات W3D.big و Textures.big و Terrain.big تأتي من لعبة Generals الأصلية. في Steam تجدها داخل المجلد ZH_Generals: انسخ مجلد Zero Hour كاملاً ومعه ZH_Generals.</string>

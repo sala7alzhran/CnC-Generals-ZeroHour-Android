@@ -81,6 +81,13 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
 - **Added** the self‑contained APK: game data bundled as split `.pak` assets + a `SetupActivity`
   first‑run extractor. Documents the SELinux constraints on writing internal storage.
 - App icon + label ("Generals Zero Hour").
+- **Changed** the import to shrink the installed data by about 450 MB (2.44 → 1.99 GB on a
+  Steam copy): uncompressed 16-bit speech and sound effects inside the `.big` archives are
+  re-encoded to IMA ADPCM, the 4:1 format the retail game already uses for some of its own sounds
+  and which FFmpeg decodes. Music, videos, textures and maps are copied untouched. Each archive is
+  rewritten next to itself and swapped in only when complete; a `.compacted` list skips the work
+  on a re-import. The two "sizzle" promo videos (39 MB), which only play after the intro movies
+  that Android skips, are no longer copied.
 
 ## In progress
 - LAN multiplayer between two Android devices (UDP discovery; `MulticastLock` held by the

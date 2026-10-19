@@ -80,7 +80,9 @@ final class GameDataLayout {
         String l = rel.toLowerCase(Locale.ROOT);
         String[] parts = l.split("/");
         if (parts.length == 1) return l.endsWith(".big") || l.equals("dxvk.conf");
-        if (parts[0].equals("data")) return true;
+        // The "sizzle" promo reel only plays after the intro movies, which the Android build
+        // skips (GlobalData m_playIntro), so its two copies (39 MB) are never used.
+        if (parts[0].equals("data")) return !parts[parts.length - 1].startsWith("sizzle_review");
         return parts.length == 2 && parts[0].equals(BASE_DIR.toLowerCase(Locale.ROOT))
                 && l.endsWith(".big");
     }

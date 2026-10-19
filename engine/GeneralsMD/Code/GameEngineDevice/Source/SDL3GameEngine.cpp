@@ -175,6 +175,7 @@ namespace {
 // ------------------------------------------------------------------ tuning --
 const Uint64 TAP_DEFER_MS        = 45;      // classic mode: defer left-down this long to catch a 2nd finger
 const Uint64 CLICK_HOLD_MS       = 150;     // minimum synthesized press duration (the GUI needs it, see below)
+const Uint64 WORLD_CLICK_HOLD_MS = 40;      // a battlefield tap only needs its down and up in different frames
 const Uint64 TWO_TAP_MAX_MS      = 300;     // 2-finger press shorter than this w/o move = right-click
 const Uint64 LONG_PRESS_NS       = 350ull * 1000000ull;  // stationary press that arms box-select
 const Uint64 DOUBLE_TAP_NS       = 300ull * 1000000ull;  // second tap within this = double click
@@ -453,16 +454,16 @@ void synthLeftDown(float x, float y, Uint8 clicks = 1) {
 }
 // Release a held left button, guaranteeing >= CLICK_HOLD_MS of total press so
 // the GUI registers the click. Long presses/drags release immediately.
-void releaseLeftHeld(float x, float y) {
-	Uint64 due = g_leftDownSynthMs + CLICK_HOLD_MS;
+void releaseLeftHeld(float x, float y, Uint64 holdMs = CLICK_HOLD_MS) {
+	Uint64 due = g_leftDownSynthMs + holdMs;
 	if (SDL_GetTicks() >= due) synthButton(SDL_BUTTON_LEFT, false, x, y);
 	else                       queueUpAt(SDL_BUTTON_LEFT, x, y, due);
 	g_leftHeld = false;
 }
 // A complete left click (or double click) at a point: press now, release after the hold.
-inline void synthClick(float x, float y, Uint8 clicks) {
+inline void synthClick(float x, float y, Uint8 clicks, Uint64 holdMs = CLICK_HOLD_MS) {
 	synthLeftDown(x, y, clicks);
-	releaseLeftHeld(x, y);
+	releaseLeftHeld(x, y, holdMs);
 }
 inline void rightClick(float x, float y) {
 	synthMotion(x, y);
@@ -923,7 +924,7 @@ void cameraTap(float x, float y, Uint64 now) {
 	} else {
 		g_lastTapNs = now; g_lastTapX = x; g_lastTapY = y;
 	}
-	synthClick(x, y, clicks);
+	synthClick(x, y, clicks, WORLD_CLICK_HOLD_MS);   // the world needs no GUI-length press
 }
 
 void endPrimary() {
@@ -1144,7 +1145,7 @@ void handleFingerUp(const SDL_TouchFingerEvent &tf) {
 			break;
 		case PM_CAM_ARMED:
 			if (placingBuilding()) cameraTap(g_pSX, g_pSY, now);   // a slow tap still places
-			else synthClick(g_pSX, g_pSY, 1);    // long-press without a drag: just a (slow) tap
+			else synthClick(g_pSX, g_pSY, 1, WORLD_CLICK_HOLD_MS);    // long-press without a drag: just a (slow) tap
 			break;
 		case PM_CAM_BOX:
 			clampInsideEdges(px, py);

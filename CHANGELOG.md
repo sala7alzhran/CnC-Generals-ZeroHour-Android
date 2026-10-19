@@ -17,6 +17,12 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
   APK installs over the previous one instead of failing with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
   and forcing an uninstall + 2.6 GB re‑import.
 
+## HUD
+- **Added** an auto-folding command bar: with nothing selected, the bar drops to the game's own
+  "low" stage (the thin top rail), and selecting anything brings the full bar back. The bar's
+  up/down arrow overrides this until the selection changes. On Android the world is always drawn
+  full height (`m_viewportHeightScale = 1`), so folding never resizes the battlefield view.
+
 ## Rendering (DXVK → Vulkan on Mali‑G57)
 - **Fixed** the Mali shader‑compiler crash in missions — root cause: D3D user clip planes
   (`gl_ClipDistance`). Disabling them unblocked gameplay and full model deployment.

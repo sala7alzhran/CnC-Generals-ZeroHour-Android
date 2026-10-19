@@ -58,6 +58,10 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
 - **Added** a full multi‑touch control scheme in `SDL3GameEngine.cpp` (tap/drag/pinch/2‑finger,
   min‑press + motion‑keepalive for synthesized clicks).
 - **Added** the on‑screen **☰** in‑game menu (ESC) button (`W3DInGameUI.cpp`).
+- **Changed** the Android Back button / edge-swipe gesture to work as ESC (the pause menu in a
+  battle, skip a movie) instead of sending the whole game to the background, which an edge swipe
+  during a battle did by accident. **Fixed** Back reaching the game as the letter K: SDL's
+  consumer key codes (above 255) wrapped around in `SDL3Keyboard`'s 8-bit key table.
 - **Added** the on‑screen **▶▶** cutscene Skip button (synthesizes `KEY_ESC`).
 - **Added** a persisted touch sensitivity control (repurposes Options→Scroll Speed for pan+zoom).
 - Disabled SDL's built‑in touch→mouse synthesis (set before `SDL_InitSubSystem`).

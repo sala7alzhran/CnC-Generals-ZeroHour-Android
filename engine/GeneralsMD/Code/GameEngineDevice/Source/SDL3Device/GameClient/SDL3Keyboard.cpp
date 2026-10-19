@@ -154,8 +154,16 @@ void SDL3Keyboard::getKey(KeyboardIO *key)
 	// Get keyboard event from buffer
 	const SDL_KeyboardEvent& keyEvent = m_eventBuffer[m_nextGetIndex].key;
 	
-	// Translate SDL3 key code to game KeyDefType
-	KeyDefType keyDef = translateScanCodeToKeyVal(keyEvent.scancode);
+	// Translate SDL3 key code to game KeyDefType. The table below takes 8-bit codes; SDL's
+	// consumer keys (AC_BACK = 270 and up) would wrap around onto letters, so they map to nothing.
+	KeyDefType keyDef = keyEvent.scancode < 256 ? translateScanCodeToKeyVal(keyEvent.scancode) : KEY_NONE;
+#if defined(__ANDROID__)
+	// @port Android: the Back button / gesture is ESC, as in other Android games: the pause menu
+	// in a battle, back out of a menu, skip a movie (SDL_HINT_ANDROID_TRAP_BACK_BUTTON in SDL3Main
+	// keeps it from leaving the game).
+	if (keyEvent.scancode == SDL_SCANCODE_AC_BACK)
+		keyDef = KEY_ESC;
+#endif
 	
 	key->key = keyDef;
 	key->status = KeyboardIO::STATUS_UNUSED;

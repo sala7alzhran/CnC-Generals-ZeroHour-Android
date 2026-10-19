@@ -103,6 +103,13 @@ UnicodeString LANPreferences::getUserName()
 		// Found an user name. Use it if valid.
 		ret = QuotedPrintableToUnicodeString(it->second);
 		ret.trim();
+#if defined(__ANDROID__)
+		// @port Android: before the app published the phone's name (IPEnumeration::getMachineName),
+		// the default saved here was the hostname "localhost", the same on every phone. Treat it as
+		// no name so the phone's own name is used.
+		if (ret.compareNoCase(L"localhost") == 0)
+			ret.clear();
+#endif
 		if (!ret.isEmpty())
 		{
 			return ret;

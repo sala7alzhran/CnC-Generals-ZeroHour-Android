@@ -49,6 +49,12 @@ extern Bool testMinimumRequirements(ChipsetType *videoChipType, CpuType *cpuType
 
 GameLODManager *TheGameLODManager=nullptr;
 
+#if defined(__ANDROID__)
+// @port Android: the phone's graphics tier (0 = low, 1 = mid, 2 = high), set by W3DDisplay::init
+// from the GPU and the memory size before the first detail level is chosen; -1 until then.
+Int TheAndroidGraphicsTier = -1;
+#endif
+
 static const FieldParse TheStaticGameLODFieldParseTable[] =
 {
 	{ "MinimumFPS",						INI::parseInt,					nullptr,	offsetof( StaticGameLODInfo, m_minFPS)},
@@ -499,6 +505,18 @@ StaticGameLODLevel GameLODManager::getRecommendedStaticLODLevel()
 		//search all our presets for matching hardware
 		m_idealDetailLevel = STATIC_GAME_LOD_LOW;
 
+#if defined(__ANDROID__)
+		// @port Android: the presets below compare against PC processors and rate every phone
+		// "High". Use the phone's graphics tier instead: Low, Medium or High detail.
+		if (TheAndroidGraphicsTier >= 0)
+		{
+			static const StaticGameLODLevel byTier[] = { STATIC_GAME_LOD_LOW, STATIC_GAME_LOD_MEDIUM, STATIC_GAME_LOD_HIGH };
+			m_idealDetailLevel = byTier[TheAndroidGraphicsTier > 2 ? 2 : TheAndroidGraphicsTier];
+		}
+		else
+#endif
+		{
+
 		//get system configuration - only need vide chip type, got rest in ::init().
 		testMinimumRequirements(&m_videoChipType,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr);
 		if (m_videoChipType == DC_UNKNOWN)
@@ -526,6 +544,7 @@ StaticGameLODLevel GameLODManager::getRecommendedStaticLODLevel()
 				}
 				if (m_idealDetailLevel >= i)
 					break;	//we already found a higher level than the remaining presets so no need to keep searching.
+		}
 		}
 		//Save ideal detail level for future usage
 		OptionPreferences optionPref;

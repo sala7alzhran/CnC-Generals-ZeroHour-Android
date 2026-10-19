@@ -23,6 +23,21 @@ All changes are relative to the [GeneralsX](https://github.com/fbraz3/GeneralsX)
   up/down arrow overrides this until the selection changes. On Android the world is always drawn
   full height (`m_viewportHeightScale = 1`), so folding never resizes the battlefield view.
 
+## Graphics settings
+- **Added** a render-scale setting: on Android, Options > Resolution lists the screen's own size
+  and 85 / 75 / 67 / 50 % of its height (never below 540 lines), all with the screen's shape. The
+  game renders at that size and the pillarbox pass stretches it over the whole screen. The change
+  applies right away from the main menu's Options (the game asks to keep it).
+- **Added** first-run graphics defaults by phone class. The game's own detection compared against
+  PC processors and rated every phone "High"; now the lower of two guesses wins: the GPU family
+  (from the Vulkan device name: Adreno, Mali, Immortalis, PowerVR, Xclipse) and the memory size.
+  Low phones start at up to 720 lines with Low detail, mid phones at up to 900 lines with Medium,
+  high phones at the native size with High. A choice made in Options is kept. `device_tier.txt`
+  (0, 1 or 2) in the app's files folder forces a class. See [docs/DEVICE-SUPPORT.md](docs/DEVICE-SUPPORT.md).
+- **Fixed** taps landing in the wrong place below the native resolution: the touch layer's
+  synthesized mouse events now name the game window, so they are scaled like real ones. The ☰ and
+  Skip buttons are hit-tested in the coordinates they're drawn in.
+
 ## Menus
 - **Added** smart touch in menus: a tap that lands on no control moves to the nearest enabled
   control within 4 mm, and a tap on a dropdown's text opens its list. A modal dialog limits the

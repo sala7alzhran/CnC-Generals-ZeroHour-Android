@@ -261,14 +261,20 @@ inline bool videoPlaying() {
 inline bool menuButtonActive() {
 	return inLiveGame() && (!TheInGameUI || !TheInGameUI->isQuitMenuVisible()) && !videoPlaying();
 }
+void toEngine(float px, float py, ICoord2D &out);   // window pixels -> display coordinates
+// Both buttons are drawn in the display's coordinates (W3DInGameUI.cpp), which are not window
+// pixels when the game renders below the screen resolution (Options > Resolution).
 inline bool onMenuButton(float px, float py) {
-	return px >= MENU_BTN_X && px < MENU_BTN_X + MENU_BTN_W
-	    && py >= MENU_BTN_Y && py < MENU_BTN_Y + MENU_BTN_H;
+	ICoord2D e; toEngine(px, py, e);
+	return e.x >= MENU_BTN_X && e.x < MENU_BTN_X + MENU_BTN_W
+	    && e.y >= MENU_BTN_Y && e.y < MENU_BTN_Y + MENU_BTN_H;
 }
 inline bool onSkipButton(float px, float py) {
 	float w, h; winSize(w, h);
+	if (TheDisplay && TheDisplay->getWidth()) w = (float)TheDisplay->getWidth();
+	ICoord2D e; toEngine(px, py, e);
 	float bx = w - SKIP_BTN_MX - SKIP_BTN_W;   // top-right, right-anchored (matches draw)
-	return px >= bx && px < bx + SKIP_BTN_W && py >= SKIP_BTN_Y && py < SKIP_BTN_Y + SKIP_BTN_H;
+	return e.x >= bx && e.x < bx + SKIP_BTN_W && e.y >= SKIP_BTN_Y && e.y < SKIP_BTN_Y + SKIP_BTN_H;
 }
 
 // Camera sensitivity from the Options > Scroll Speed slider, which persists
@@ -358,12 +364,17 @@ float pxPerMm() {
 inline float mm(float millimetres) { return millimetres * pxPerMm(); }
 
 // ------------------------------------------------- synthesized mouse input --
+// The window the events claim to come from: SDL3Mouse::scaleMouseCoordinates maps window pixels
+// to the display's coordinates only for a known window, which matters whenever the game renders
+// below the screen resolution (Options > Resolution).
+inline SDL_WindowID synthWindowId() { return TheSDL3Window ? SDL_GetWindowID(TheSDL3Window) : 0; }
 void synthMotion(float x, float y) {
 	if (!TheMouse) return;
 	SDL3Mouse *m = dynamic_cast<SDL3Mouse*>(TheMouse); if (!m) return;
 	SDL_Event e; memset(&e, 0, sizeof(e));
 	e.type = SDL_EVENT_MOUSE_MOTION;
 	e.motion.timestamp = SDL_GetTicksNS();
+	e.motion.windowID = synthWindowId();
 	e.motion.x = x; e.motion.y = y;
 	m->addSDLEvent(&e);
 }
@@ -373,6 +384,7 @@ void synthButton(Uint8 button, bool down, float x, float y, Uint8 clicks = 1) {
 	SDL_Event e; memset(&e, 0, sizeof(e));
 	e.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
 	e.button.timestamp = SDL_GetTicksNS();
+	e.button.windowID = synthWindowId();
 	e.button.button = button;
 	e.button.down = down;
 	e.button.clicks = clicks;   // 2 on a down = double click (SDL3Mouse::translateButtonEvent)

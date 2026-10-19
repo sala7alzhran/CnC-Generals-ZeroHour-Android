@@ -44,6 +44,9 @@ static void drawFramerateBar();
 #include <unistd.h> // access() for file existence checks
 #include <SDL3/SDL.h> // For SDL_ShowWindow() on Linux
 #endif
+#if defined(__ANDROID__)
+#include <jni.h>   // the memory class comes from ZerohourActivity
+#endif
 #include <time.h>
 #include <vector>
 
@@ -58,6 +61,7 @@ static void drawFramerateBar();
 #include "Common/PlayerList.h"
 #include "Common/ThingTemplate.h"
 #include "Common/GameLOD.h"
+#include "Common/OptionPreferences.h"
 #include "Common/DrawModule.h"
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/Module/PhysicsUpdate.h"
@@ -591,6 +595,149 @@ static void SDL3_ApplyWindowModeForRenderConfig(Bool windowed, Int renderWidth, 
 }
 #endif
 
+#if defined(__ANDROID__)
+// @port Android: graphics settings for slower phones.
+//
+// The game renders at a resolution of its own and the pillarbox pass (DX8Wrapper::Pillarbox_*)
+// stretches the picture over the whole screen; touches are mapped back the same way. Lower
+// resolutions with the screen's own shape are therefore a cheap "render scale": the choice sits
+// in Options > Resolution, and on the first run it is picked from the phone's graphics tier.
+
+// Render resolutions offered on this screen, largest first: 100, 85, 75, 67 and 50 % of the
+// screen height, at the screen's aspect ratio, even sizes, no lower than 540 lines.
+static void androidRenderModes(Int nativeW, Int nativeH, std::vector<ICoord2D> &out)
+{
+	out.clear();
+	static const Real scales[] = { 1.0f, 0.85f, 0.75f, 2.0f / 3.0f, 0.5f };
+	for (Real scale : scales)
+	{
+		Int h = ((Int)(nativeH * scale + 0.5f)) & ~1;
+		Int w = ((Int)((Real)h * nativeW / nativeH + 0.5f)) & ~1;
+		if (scale == 1.0f) { w = nativeW; h = nativeH; }
+		if (h < 540 && !out.empty()) continue;
+		Bool duplicate = FALSE;
+		for (const ICoord2D &m : out) duplicate |= (m.x == w && m.y == h);
+		if (!duplicate) { ICoord2D m; m.x = w; m.y = h; out.push_back(m); }
+	}
+}
+
+// Graphics class of a GPU from its Vulkan device name: 0 = low, 1 = mid, 2 = high.
+// Unknown names count as high so nothing is taken away from a GPU this list doesn't know.
+static Int androidGpuTier(const char *name)
+{
+	if (!name || !*name) return 2;
+	const char *p;
+	if ((p = strstr(name, "Adreno")) != nullptr)
+	{
+		while (*p && (*p < '0' || *p > '9')) ++p;
+		const Int n = atoi(p);
+		if (n >= 800) return 2;
+		if (n >= 700) return n >= 725 ? 2 : 1;   // 710/720 mid-range, 725+ (8 Gen 2 and up) high
+		if (n >= 600) return n >= 630 ? 2 : (n >= 615 ? 1 : 0);
+		if (n >= 500) return n >= 530 ? 1 : 0;
+		return 0;
+	}
+	if (strstr(name, "Immortalis")) return 2;
+	if ((p = strstr(name, "Mali-G")) != nullptr)
+	{
+		const Int n = atoi(p + 6);
+		if (n >= 700) return 2;                      // G710, G715, G720, G925...
+		if (n >= 600) return 1;                      // G610, G615
+		if (n >= 100) return 0;                      // G310
+		if (n == 68 || n == 76 || n == 77 || n == 78) return 1;
+		return 0;                                    // G31, G51, G52, G57, G71, G72
+	}
+	if (strstr(name, "Mali")) return 0;              // Mali-T and older
+	if (strstr(name, "PowerVR")) return 0;
+	if ((p = strstr(name, "Xclipse")) != nullptr)
+	{
+		while (*p && (*p < '0' || *p > '9')) ++p;
+		return atoi(p) >= 900 ? 2 : 1;
+	}
+	if (strstr(name, "Maleoon")) return 1;
+	return 2;
+}
+
+// Memory class from ZerohourActivity.getMemoryTier(): 0 = 4 GB or less, 1 = about 6 GB, 2 = more.
+static Int androidMemoryTier()
+{
+	JNIEnv *env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+	jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
+	if (!env || !activity) return 2;
+	Int tier = 2;
+	jclass cls = env->GetObjectClass(activity);
+	if (cls)
+	{
+		jmethodID method = env->GetStaticMethodID(cls, "getMemoryTier", "()I");
+		if (env->ExceptionCheck()) { env->ExceptionClear(); method = nullptr; }
+		if (method)
+		{
+			tier = (Int)env->CallStaticIntMethod(cls, method);
+			if (env->ExceptionCheck()) { env->ExceptionClear(); tier = 2; }
+		}
+		env->DeleteLocalRef(cls);
+	}
+	env->DeleteLocalRef(activity);
+	return tier;
+}
+
+// How much graphics work this phone can take: 0 = low, 1 = mid, 2 = high. The lower of the GPU
+// and memory guesses wins. A player can force a tier by putting 0, 1 or 2 in device_tier.txt in
+// the app's files folder (the engine's working directory).
+static Int androidGraphicsTier()
+{
+	if (FILE *f = fopen("device_tier.txt", "r"))
+	{
+		int forced = -1;
+		if (fscanf(f, "%d", &forced) != 1) forced = -1;
+		fclose(f);
+		if (forced >= 0 && forced <= 2)
+		{
+			fprintf(stderr, "INFO: [Graphics] tier %d forced by device_tier.txt\n", forced);
+			return forced;
+		}
+	}
+	D3DADAPTER_IDENTIFIER8 id;
+	memset(&id, 0, sizeof(id));
+	if (IDirect3D8 *d3d = DX8Wrapper::_Get_D3D8())
+		d3d->GetAdapterIdentifier(0, D3DENUM_NO_WHQL_LEVEL, &id);
+	const char *gpu = id.Description;   // the Vulkan device name, e.g. "Adreno (TM) 750"
+	const Int gpuTier = androidGpuTier(gpu);
+	const Int memoryTier = androidMemoryTier();
+	const Int tier = gpuTier < memoryTier ? gpuTier : memoryTier;
+	fprintf(stderr, "INFO: [Graphics] GPU '%s' class %d, memory class %d -> tier %d\n",
+		gpu, gpuTier, memoryTier, tier);
+	return tier;
+}
+
+// First-run render resolution for a graphics tier: the largest mode no taller than 720, 900 or
+// 1080 lines (low, mid, high), so a 2400x1080 phone renders at 1600x720, 1800x810 or 2400x1080.
+static void androidDefaultRenderMode(Int tier, Int nativeW, Int nativeH, Int &w, Int &h)
+{
+	static const Int maxLines[] = { 720, 900, 1080 };
+	const Int limit = maxLines[tier < 0 ? 0 : (tier > 2 ? 2 : tier)];
+	std::vector<ICoord2D> modes;
+	androidRenderModes(nativeW, nativeH, modes);
+	w = modes.back().x;
+	h = modes.back().y;
+	for (const ICoord2D &m : modes)
+	{
+		if (m.y <= limit) { w = m.x; h = m.y; break; }
+	}
+}
+
+static Bool androidIsRenderMode(Int nativeW, Int nativeH, Int w, Int h)
+{
+	std::vector<ICoord2D> modes;
+	androidRenderModes(nativeW, nativeH, modes);
+	for (const ICoord2D &m : modes)
+	{
+		if (m.x == w && m.y == h) return TRUE;
+	}
+	return FALSE;
+}
+#endif
+
 // Filtered resolution cache — built once, clamps widths to 4:3..16:9 and deduplicates.
 struct FilteredRes { Int w, h, bits; };
 static std::vector<FilteredRes> s_filteredResolutions;
@@ -603,14 +750,18 @@ static void buildFilteredResolutions()
 	// @port Android: the DXVK render device does not populate a Win32-style
 	// resolution table, so WW3D::Get_Render_Device_Desc(0).Enumerate_Resolutions()
 	// dereferences an empty table and SIGSEGVs (fault 0x568) the moment the
-	// Options menu builds its resolution list. Expose just the single native
-	// display resolution (the game already renders at that size on Android).
+	// Options menu builds its resolution list. Expose the native display
+	// resolution and the lower render resolutions with the same shape
+	// (androidRenderModes), which the pillarbox pass stretches to the screen.
 	{
 		int nativeW = 0, nativeH = 0; float density = 1.0f;
 		if (!DX8Wrapper::GetNativeDisplaySize(nativeW, nativeH, density) || nativeW <= 0 || nativeH <= 0) {
 			nativeW = DEFAULT_DISPLAY_WIDTH; nativeH = DEFAULT_DISPLAY_HEIGHT;
 		}
-		s_filteredResolutions.push_back({ nativeW, nativeH, DEFAULT_DISPLAY_BIT_DEPTH });
+		std::vector<ICoord2D> modes;
+		androidRenderModes(nativeW, nativeH, modes);
+		for (const ICoord2D &m : modes)
+			s_filteredResolutions.push_back({ m.x, m.y, DEFAULT_DISPLAY_BIT_DEPTH });
 		s_filteredDirty = false;
 		return;
 	}
@@ -999,18 +1150,32 @@ void W3DDisplay::init()
 			case 0:
 			{
 #if defined(__ANDROID__)
-				// @port Android: render at the real device resolution so the game
-				// fills the whole screen instead of being letterboxed into a 4:3
+				// @port Android: render at a resolution with the screen's own shape so
+				// the game fills the whole screen instead of being letterboxed into a 4:3
 				// pillarbox. The display size is published by SDL3Main and is
 				// guaranteed to be set by the time W3DDisplay::init() runs (which is
 				// well after the SDL window is created). Setting m_xResolution here
 				// keeps the 3D backbuffer, the 2D UI and the mouse all in agreement.
+				// The player's choice in Options > Resolution is kept; until there is
+				// one, the phone's graphics tier picks it (androidDefaultRenderMode).
 				extern int TheAndroidDisplayWidth;
 				extern int TheAndroidDisplayHeight;
+				extern Int TheAndroidGraphicsTier;
 				if (TheAndroidDisplayWidth > 0 && TheAndroidDisplayHeight > 0)
 				{
-					TheWritableGlobalData->m_xResolution = TheAndroidDisplayWidth;
-					TheWritableGlobalData->m_yResolution = TheAndroidDisplayHeight;
+					TheAndroidGraphicsTier = androidGraphicsTier();
+					Int w = TheGlobalData->m_xResolution;
+					Int h = TheGlobalData->m_yResolution;
+					OptionPreferences pref;
+					const Bool chosen = pref.find("Resolution") != pref.end()
+						&& androidIsRenderMode(TheAndroidDisplayWidth, TheAndroidDisplayHeight, w, h);
+					if (!chosen)
+						androidDefaultRenderMode(TheAndroidGraphicsTier, TheAndroidDisplayWidth, TheAndroidDisplayHeight, w, h);
+					TheWritableGlobalData->m_xResolution = w;
+					TheWritableGlobalData->m_yResolution = h;
+					fprintf(stderr, "INFO: [Graphics] screen %dx%d, rendering at %dx%d (%s)\n",
+						TheAndroidDisplayWidth, TheAndroidDisplayHeight, w, h,
+						chosen ? "chosen in Options" : "default for the tier");
 				}
 #endif
 				// set our default width and height and bit depth
